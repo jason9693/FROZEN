@@ -96,14 +96,19 @@ class LitFROZEN(pl.LightningModule):
             self.tokenizer = tokenizer
 
     def training_step(self, train_batch, batch_idx):
-        x, y = train_batch
-        img = x[0]
-        tokens = self.tokenizer(x[1], return_tensors='pt', padding=True)
+        img = train_batch["image"]
+        tokens = train_batch["text_ids"]
+        mask = train_batch["text_mask"]
+
+        tokens = {
+            "input_ids": tokens,
+            "attention_mask": mask
+        }
 
         b_size = img.size()[0]
 
         loss_fn = torch.nn.CrossEntropyLoss()
-        target = torch.cat([torch.ones(b_size,1) * self.tokenizer.pad_token_id, y, torch.ones(b_size,1) * self.tokenizer.eos_token_id], -1)
+        target = torch.cat([tokens["input_ids"], torch.ones(b_size,1) * self.tokenizer.eos_token_id], -1)[:,1:]
 
         output = self.forward(img, tokens)
         loss = loss_fn(output.logits.transpose(-1,-2), target.to(torch.long))
@@ -112,14 +117,18 @@ class LitFROZEN(pl.LightningModule):
         return loss
 
     def validation_step(self, val_batch, batch_idx):
-        x, y = val_batch
-        img = x[0]
-        tokens = self.tokenizer(x[1], return_tensors='pt', padding=True)
+        img = val_batch["image"]
+        tokens = val_batch["text_ids"]
+        mask = val_batch["text_mask"]
+        tokens = {
+            "input_ids": tokens,
+            "attention_mask": mask
+        }
 
         b_size = img.size()[0]
 
         loss_fn = torch.nn.CrossEntropyLoss()
-        target = torch.cat([torch.ones(b_size,1) * self.tokenizer.pad_token_id, y, torch.ones(b_size,1) * self.tokenizer.eos_token_id], -1)
+        target = torch.cat([tokens["input_ids"], torch.ones(b_size,1) * self.tokenizer.eos_token_id], -1)[:,1:]
 
         output = self.forward(img, tokens)
         loss = loss_fn(output.logits.transpose(-1,-2), target.to(torch.long))
