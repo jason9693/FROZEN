@@ -8,6 +8,8 @@ from transformers import (
     AutoTokenizer,
 )
 
+import pdb
+
 
 def get_pretrained_tokenizer(from_pretrained, **kwargs):
     if torch.distributed.is_initialized():
@@ -52,7 +54,9 @@ class BaseDataModule(LightningDataModule):
         )
 
         tokenizer = _config["tokenizer"]
-        self.tokenizer = get_pretrained_tokenizer(tokenizer, _config)
+
+        # pdb.set_trace()
+        self.tokenizer = get_pretrained_tokenizer(tokenizer, **_config)
         self.vocab_size = self.tokenizer.vocab_size
 
         collator = (
@@ -61,9 +65,14 @@ class BaseDataModule(LightningDataModule):
             else DataCollatorForLanguageModeling
         )
 
-        self.mlm_collator = collator(
-            tokenizer=self.tokenizer, mlm=True, mlm_probability=_config["mlm_prob"]
-        )
+        if _config.get("mlm_prob") is not None:
+            self.mlm_collator = collator(
+                tokenizer=self.tokenizer, mlm=True, mlm_probability=_config["mlm_prob"]
+            )
+        else:
+            self.mlm_collator = collator(
+                tokenizer=self.tokenizer, mlm=False, mlm_probability=0.0
+            )
         self.setup_flag = False
 
     @property

@@ -2,4 +2,9 @@
 dataset/*.zip
 datset/*.json
 dataset/*.jpg
+dataset/*
 *.out
+core.*
+result/*
+.vscode/
+*.pyc

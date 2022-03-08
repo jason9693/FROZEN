@@ -22,6 +22,7 @@ class MTDataModule(LightningDataModule):
         self.batch_size = self.dms[0].batch_size
         self.vocab_size = self.dms[0].vocab_size
         self.num_workers = self.dms[0].num_workers
+        self.tokenizer = self.dms[0].tokenizer
 
         self.dist = dist
 

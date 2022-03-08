@@ -8,6 +8,8 @@ from frozen.config import ex
 from frozen.models import LitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
 
+import pdb
+
 
 @ex.automain
 def main(_config):
@@ -17,6 +19,7 @@ def main(_config):
     dm = MTDataModule(_config, dist=True)
 
     model = LitFROZEN.from_pretrained(_config["lm"])
+    
     model.set_tokenizer(dm.tokenizer)
     exp_name = f'{_config["exp_name"]}'
 
@@ -69,8 +72,11 @@ def main(_config):
         fast_dev_run=_config["fast_dev_run"],
         val_check_interval=_config["val_check_interval"],
     )
+    # pdb.set_trace()
 
+    
     if not _config["test_only"]:
         trainer.fit(model, datamodule=dm)
     else:
         trainer.test(model, datamodule=dm)
+        print("test finished")

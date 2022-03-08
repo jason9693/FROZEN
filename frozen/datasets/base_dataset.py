@@ -7,6 +7,7 @@ import os
 from PIL import Image
 from frozen.transforms import keys_to_transforms
 
+import pdb
 
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
@@ -50,6 +51,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
             self.table_names = list()
             for i, name in enumerate(names):
+                # pdb.set_trace()
                 self.table_names += [name] * len(tables[i])
 
             self.table = pa.concat_tables(tables, promote=True)
