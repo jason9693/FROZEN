@@ -15,11 +15,15 @@ import pdb
 def main(_config):
     _config = copy.deepcopy(_config)
     pl.seed_everything(_config["seed"])
+    
+    if _config["lm"] in {"gpt2"}:
+        _config["pad_token"] = '<|endoftext|>'
+    else:
+        _config.pop("pad_token")
 
     dm = MTDataModule(_config, dist=True)
 
-    model = LitFROZEN.from_pretrained(_config["lm"])
-    
+    model = LitFROZEN.from_pretrained(_config["lm"], emb_key=_config["emb_key"])
     model.set_tokenizer(dm.tokenizer)
     exp_name = f'{_config["exp_name"]}'
 
@@ -27,7 +31,7 @@ def main(_config):
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=1,
         verbose=True,
-        monitor="val/the_metric",
+        monitor="val_loss",
         mode="max",
         save_last=True,
     )
@@ -72,8 +76,6 @@ def main(_config):
         fast_dev_run=_config["fast_dev_run"],
         val_check_interval=_config["val_check_interval"],
     )
-    # pdb.set_trace()
-
     
     if not _config["test_only"]:
         trainer.fit(model, datamodule=dm)

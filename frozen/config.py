@@ -45,6 +45,7 @@ def config():
     # Tokenizer setting
     pad_token = '<|endoftext|>'
     tokenizer = lm
+    emb_key = "n_embd"
 
     # Optimizer Setting
     optim_type = "adam"
@@ -67,7 +68,7 @@ def config():
     test_only = False
 
     # below params varies with the environment
-    data_root = "/data/private/python/FROZEN/dataset/"
+    data_root = "/data/private/python/FROZEN/dataset/coco/"
     log_dir = "result"
     per_gpu_batchsize = 0  # you should define this manually with per_gpu_batch_size=#
     num_gpus = 1
@@ -79,9 +80,9 @@ def config():
 @ex.named_config
 def task_finetune_vqa():
     exp_name = "finetune_vqa"
-    datasets = ["vqa"]
-    loss_names = _loss_names({"vqa": 1})
-    batch_size = 256
+    datasets = ["coco"]
+    loss_names = _loss_names({"itm": 1})
+    batch_size = 512
     max_epoch = 10
     max_steps = None
     warmup_steps = 0.1
@@ -89,3 +90,21 @@ def task_finetune_vqa():
     learning_rate = 1e-4
     val_check_interval = 0.1
     lr_mult = 10
+
+@ex.named_config
+def task_finetune_electra():
+    exp_name = "finetune_electra"
+    lm = "google/electra-small-discriminator"
+    datasets = ["coco"]
+    loss_names = _loss_names({"itm": 1})
+    batch_size = 512
+    max_epoch = 10
+    max_steps = None
+    warmup_steps = 0.1
+    draw_false_image = 0
+    learning_rate = 1e-4
+    val_check_interval = 0.1
+    lr_mult = 10
+
+    ## huggingface lm config
+    emb_key = "embedding_size"

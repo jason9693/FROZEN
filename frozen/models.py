@@ -45,6 +45,8 @@ class FrozenModel(torch.nn.Module):
     def from_trained(cls, path: str):
         pass
 
+def get_embed_fn(model):
+    pass
 
 class LitFROZEN(pl.LightningModule):
     def __init__(self, vision_model, nlp_model, mlm=False, plm=True):
@@ -78,13 +80,15 @@ class LitFROZEN(pl.LightningModule):
         return lm_output
     
     @classmethod
-    def from_pretrained(cls, hface_path: str, vision_path='nf_resnet50', pretrained_vision: bool=False):
+    def from_pretrained(cls, hface_path: str, vision_path='nf_resnet50', pretrained_vision: bool=False, emb_key="n_embd"):
         lm_config = AutoConfig.from_pretrained(hface_path)
         
         vision = timm.create_model(vision_path, pretrained=pretrained_vision)
-        vision.head.fc = torch.nn.Linear(2048, lm_config.n_embd*2) # for prefix embedding
-        
-        lm = AutoModelForCausalLM.from_pretrained(hface_path)
+        vision.head.fc = torch.nn.Linear(2048, lm_config.to_dict()[emb_key]*2) # for prefix embedding
+        try:
+            lm = AutoModelForCausalLM.from_pretrained(hface_path)
+        except ValueError:
+            pass
 
         return cls(vision, lm)
 
@@ -156,3 +160,6 @@ class LitFROZEN(pl.LightningModule):
 
         self.log('val_loss', loss)
         return loss
+
+    def test_step(self, test_batch, batch_idx):
+        return self.validation_step(test_batch, batch_idx)

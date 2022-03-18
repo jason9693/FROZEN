@@ -1,4 +1,4 @@
-cd ../dataset/
+cd ../dataset/vqa_V2
 
 wget http://images.cocodataset.org/zips/train2014.zip
 wget http://images.cocodataset.org/zips/val2014.zip
