@@ -1,5 +1,5 @@
 # FROZEN
-Unofficial Multi-Model model: [FROZEN](https://deepmind.com/research/publications/2021/Multimodal-Few-Shot-Learning-with-Frozen-Language-Models) implementation repository published by Google DeepMind.
+Unofficial Multi-Modal model : [FROZEN](https://deepmind.com/research/publications/2021/Multimodal-Few-Shot-Learning-with-Frozen-Language-Models) implementation repository published by Google DeepMind.
 
 ![img](res/2000_2000.jpeg)
 
