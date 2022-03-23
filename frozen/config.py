@@ -35,6 +35,7 @@ def config():
 
     # Text Setting
     lm = "gpt2"
+    # lm = "gpt-neo-1.3B"
     vqav2_label_size = 3129
     max_text_len = 40
     # vocab_size = 30522
@@ -43,7 +44,8 @@ def config():
     draw_false_text = 0
 
     # Tokenizer setting
-    pad_token = '<|endoftext|>'
+    if 'gpt' in lm:
+        pad_token = '<|endoftext|>'
     tokenizer = lm
     emb_key = "n_embd"
 
@@ -76,6 +78,9 @@ def config():
     load_path = ""
     num_workers = 8
     precision = 16
+    amp_level = "O1"
+
+    vis_mode = "global"
 
 @ex.named_config
 def task_finetune_vqa():
