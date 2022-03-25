@@ -13,6 +13,7 @@ import pdb
 def main(
     seed,
     lm,
+    v_encoder,
     emb_key,
     exp_name,
     log_dir,
@@ -30,13 +31,21 @@ def main(
     amp_level,
     test_only,
     vis_mode,
+    pretrained_vision,
     _config
 ):
-    # _config = copy.deepcopy(_config)
+    os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
+    print(_config)
     pl.seed_everything(seed)
     dm = MTDataModule(_config, dist=True)
 
-    model = LitFROZEN.from_pretrained(lm, emb_key=emb_key, vis_mode=vis_mode)
+    model = LitFROZEN.from_pretrained(
+        lm,
+        emb_key=emb_key,
+        vis_mode=vis_mode,
+        vision_path=v_encoder,
+        pretrained_vision=pretrained_vision
+    )
     model.set_tokenizer(dm.tokenizer)
     exp_name = f'{exp_name}'
 
@@ -52,21 +61,11 @@ def main(
         log_dir,
         name=f'{exp_name}_seed{seed}_from_{load_path.split("/")[-1][:-5]}',
     )
+    callbacks = [checkpoint_callback]
 
-    lr_callback = pl.callbacks.LearningRateMonitor(logging_interval="step")
-    callbacks = [checkpoint_callback, lr_callback]
-
-    num_gpus = (
-        num_gpus
-        if isinstance(num_gpus, int)
-        else len(num_gpus)
-    )
-
-    grad_steps = batch_size // (
-        per_gpu_batchsize * num_gpus * num_nodes
-    )
-    grad_steps = max(grad_steps, 1)
-
+    num_gpus = num_gpus if isinstance(num_gpus, int) else len(num_gpus)
+    grad_steps = batch_size//(per_gpu_batchsize*num_gpus*num_nodes)
+    grad_steps = max(grad_steps, 1)  # handle when grad_steps=0
     max_steps = max_steps if max_steps is not None else None
 
     trainer = pl.Trainer(
@@ -91,7 +90,6 @@ def main(
         val_check_interval=val_check_interval,
         amp_level=amp_level
     )
-    
     if not test_only:
         trainer.fit(model, datamodule=dm)
     else:

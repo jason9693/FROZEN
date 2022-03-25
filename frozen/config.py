@@ -1,3 +1,5 @@
+import os
+
 from sacred import Experiment
 
 ex = Experiment("FROZEN")
@@ -70,17 +72,19 @@ def config():
     test_only = False
 
     # below params varies with the environment
-    data_root = "/data/private/python/FROZEN/dataset/coco/"
+    data_root = f"{os.getcwd()}/dataset/coco/"
     log_dir = "result"
-    per_gpu_batchsize = 0  # you should define this manually with per_gpu_batch_size=#
+    per_gpu_batchsize = 16  # you should define this manually with per_gpu_batch_size=#
     num_gpus = 1
     num_nodes = 1
     load_path = ""
     num_workers = 8
-    precision = 16
+    precision = 32
     amp_level = "O1"
 
     vis_mode = "global"
+    v_encoder = "nf_resnet50"
+    pretrained_vision = False
 
 @ex.named_config
 def task_finetune_vqa():
