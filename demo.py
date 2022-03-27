@@ -19,7 +19,7 @@ VIS_MODE_DICT = {
     'GLOBAL(FINETUNED)': {'model_key': 'global', 'path': 'global_finetune'},
     'LOCAL(FINETUNED)': {'model_key': 'local', 'path': 'local_finetune'},
     'GLOBAL+LOCAL(FROZEN+FINETUNED)': {'model_key': 'duel', 'path': 'duel_frozen'},
-    # 'GLOBAL(FROZEN+FINETUNED)': {'model_key': 'global', 'path': 'global_frozen'},
+    'GLOBAL(FROZEN+FINETUNED)': {'model_key': 'global', 'path': 'global_frozen'},
     # 'LOCAL(FROZEN+FINETUNED)': {'model_key': 'local', 'path': 'local_frozen'},
 }
 
@@ -82,15 +82,15 @@ def main():
     torch.cuda.set_device(torch.cuda.device_count()-1)  # use last device
     state = st.session_state
     st.sidebar.title('Frozen VQAv2 Demo')
-    vis_mode = st.sidebar.selectbox(
+    selected_vis_mode = st.sidebar.selectbox(
         'Choose a method to put visual token.',
         list(VIS_MODE_DICT.keys())
     )
-    info = {'Language Model': lm, 'Vision Token Type': vis_mode, 'Input Image Size': image_size}
-    load_path = f'/project/FROZEN/FROZEN_{VIS_MODE_DICT[vis_mode]["path"]}_pretrained.ckpt'
-    vis_mode = VIS_MODE_DICT[vis_mode]['model_key']
+    info = {'Language Model': lm, 'Vision Token Type': selected_vis_mode, 'Input Image Size': image_size}
+    load_path = f'/project/FROZEN/FROZEN_{VIS_MODE_DICT[selected_vis_mode]["path"]}_pretrained.ckpt'
+    vis_mode = VIS_MODE_DICT[selected_vis_mode]['model_key']
     with st.spinner('Loading the selected model, please wait...'):
-        if state.get(f'{vis_mode}_model') is None:
+        if state.get(f'{selected_vis_mode}_MODEL') is None:
             model = GPT2LitFROZEN.from_pretrained(lm, emb_key=emb_key, vis_mode=vis_mode)
             checkpoint = torch.load(load_path, map_location='cpu')
             model.load_state_dict(checkpoint['state_dict'])
@@ -101,9 +101,14 @@ def main():
             model.set_tokenizer(tokenizer)
             model.setup('test')
             model.eval().cuda()
-            state[f'{vis_mode}_model'] = model
+            state[f'{selected_vis_mode}_MODEL'] = model
         else:
-            model = state[f'{vis_mode}_model']
+            model = state[f'{selected_vis_mode}_MODEL']
+    reload_model = st.sidebar.button('Reload Model')
+    if reload_model:
+        if state.get(f'{selected_vis_mode}_MODEL') is not None:
+            del state[f'{selected_vis_mode}_MODEL']
+        st.experimental_rerun()
     max_length = st.sidebar.select_slider('Set the maximum length of output sentence.', list(range(10, 31)))
     example_dir = os.path.join(os.getcwd(), 'examples')
     os.makedirs(example_dir, exist_ok=True)

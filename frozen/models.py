@@ -56,7 +56,7 @@ class GPT2LitFROZEN(pl.LightningModule):
         emb_key="n_embd",
         vis_mode='global',
         num_global_tokens=2,
-        num_local_tokens=4,
+        local_output_size=4,
         **kwargs
     ):
         lm_config = AutoConfig.from_pretrained(hface_path)
@@ -65,7 +65,7 @@ class GPT2LitFROZEN(pl.LightningModule):
             vision,
             lm_config.to_dict()[emb_key],
             num_global_tokens,
-            num_local_tokens,
+            local_output_size,
             vision_path,
             vis_mode,
             pretrained_vision
@@ -173,8 +173,6 @@ class ElectraLitFROZEN(pl.LightningModule):
         vision_model,
         nlp_model,
         vis_mode='global',
-        mlm=False,
-        plm=True
     ):
         super().__init__()
         self.lm = nlp_model
@@ -185,8 +183,6 @@ class ElectraLitFROZEN(pl.LightningModule):
         for param in self.lm.generator_lm_head.parameters():
             param.requires_grad = True
         self.v_encoder = vision_model
-        self.mlm = mlm
-        self.plm = plm
         self.vis_mode = vis_mode
 
     def forward(self, img, tokens, **kwargs):
@@ -216,7 +212,7 @@ class ElectraLitFROZEN(pl.LightningModule):
         emb_key="embedding_size",
         vis_mode='global',
         num_global_tokens=2,
-        num_local_tokens=4,
+        local_output_size=4,
         **kwargs
     ):
         lm_config = AutoConfig.from_pretrained(hface_path)
@@ -225,7 +221,7 @@ class ElectraLitFROZEN(pl.LightningModule):
             vision,
             lm_config.to_dict()[emb_key],
             num_global_tokens,
-            num_local_tokens,
+            local_output_size,
             vision_path,
             vis_mode,
             pretrained_vision
@@ -325,4 +321,39 @@ class ElectraLitFROZEN(pl.LightningModule):
 
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
+
+
+class ElectraLitFrozenCausalLM(ElectraLitFROZEN):
+    def training_step(self, train_batch, batch_idx):
+        img = train_batch["image"][0]
+        b_size = img.size()[0]
+        loss_fn = torch.nn.CrossEntropyLoss()
+        tokens = train_batch["text_ids"]
+        mask = train_batch["text_masks"]
+        tokens = {
+            "input_ids": tokens,
+            "attention_mask": mask
+        }
+        eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.mask_token_id
+        img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
+        target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
+        loss = self.train_forward(img, tokens, loss_fn, target)
+        self.log('train_plm_loss', loss)
+        return loss
+
+
+class ElectraLitFrozenMaskedLM(ElectraLitFROZEN):
+    def training_step(self, train_batch, batch_idx):
+        img = train_batch["image"][0]
+        loss_fn = torch.nn.CrossEntropyLoss()
+        tokens = train_batch["text_ids_mlm"]
+        mask = train_batch["text_masks"]
+        tokens = {
+            "input_ids": tokens,
+            "attention_mask": mask
+        }
+        target = train_batch["text_labels_mlm"]
+        loss = self.train_forward(img, tokens, loss_fn, target)
+        self.log('train_mlm_loss', loss)
+        return loss
 

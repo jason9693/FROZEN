@@ -16,13 +16,13 @@ class GlobalEmbeddingHead(nn.Module):
 
 
 class LocalEmbeddingHead(nn.Module):
-    def __init__(self, feat_dim, embed_dim, num_local_tokens):
+    def __init__(self, feat_dim, embed_dim, local_output_size):
         super().__init__()
-        if isinstance(num_local_tokens, int):
-            num_local_tokens = (num_local_tokens, int(num_local_tokens*1333./800.))
-        self.pool = nn.AdaptiveAvgPool2d(num_local_tokens)
+        if isinstance(local_output_size, int):
+            local_output_size = (local_output_size, int(local_output_size*1333./800.))
+        self.pool = nn.AdaptiveAvgPool2d(local_output_size)
         self.proj = nn.Linear(feat_dim, embed_dim)
-        self.num_tokens = num_local_tokens[0]*num_local_tokens[1]
+        self.num_tokens = local_output_size[0]*local_output_size[1]
 
     def forward(self, features):
         output = self.pool(features)
@@ -32,10 +32,10 @@ class LocalEmbeddingHead(nn.Module):
 
 
 class DuelEmbeddingHead(nn.Module):
-    def __init__(self, feat_dim, embed_dim, num_global_tokens, num_local_tokens):
+    def __init__(self, feat_dim, embed_dim, num_global_tokens, local_output_size):
         super().__init__()
         self.global_head = GlobalEmbeddingHead(feat_dim, embed_dim, num_global_tokens)
-        self.local_head = LocalEmbeddingHead(feat_dim, embed_dim, num_local_tokens)
+        self.local_head = LocalEmbeddingHead(feat_dim, embed_dim, local_output_size)
         self.num_tokens = self.global_head.num_tokens+self.local_head.num_tokens
 
     def forward(self, features):
@@ -138,12 +138,12 @@ ENCODER_FACTORY = dict(
     )
 )
 HEAD_FACTORY = {
-    "duel": lambda feat_dim, embed_dim, num_global_tokens, num_local_tokens:
-    DuelEmbeddingHead(feat_dim, embed_dim, num_global_tokens, num_local_tokens),
-    "global": lambda feat_dim, embed_dim, num_global_tokens, num_local_tokens:
+    "duel": lambda feat_dim, embed_dim, num_global_tokens, local_output_size:
+    DuelEmbeddingHead(feat_dim, embed_dim, num_global_tokens, local_output_size),
+    "global": lambda feat_dim, embed_dim, num_global_tokens, local_output_size:
     GlobalEmbeddingHead(feat_dim, embed_dim, num_global_tokens),
-    "local": lambda feat_dim, embed_dim, num_global_tokens, num_local_tokens:
-    LocalEmbeddingHead(feat_dim, embed_dim, num_local_tokens)
+    "local": lambda feat_dim, embed_dim, num_global_tokens, local_output_size:
+    LocalEmbeddingHead(feat_dim, embed_dim, local_output_size)
 }
 
 
@@ -151,7 +151,7 @@ def wrap_vis_encoder(
     model,
     embed_dim,
     num_global_tokens,
-    num_local_tokens,
+    local_output_size,
     encoder_name,
     vis_mode,
     freeze_model
@@ -165,7 +165,7 @@ def wrap_vis_encoder(
     attr_key = attr_keys.pop(0)
     for id_key in attr_keys:
         setattr(model, id_key, nn.Identity())
-    head_module = head(feat_dim, embed_dim, num_global_tokens, num_local_tokens)
+    head_module = head(feat_dim, embed_dim, num_global_tokens, local_output_size)
     setattr(model, attr_key, head_module)
     model.num_tokens = head_module.num_tokens
     if freeze_model:

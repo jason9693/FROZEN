@@ -1,13 +1,11 @@
-import os
 import copy
+import json
+import os
 import pytorch_lightning as pl
-from transformers import ElectraTokenizerFast
 
 from frozen.config import ex
 from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
-
-import pdb
 
 
 @ex.automain
@@ -108,6 +106,8 @@ def main(
         val_check_interval=val_check_interval,
         amp_level=amp_level
     )
+    with open(os.path.join(trainer.weights_save_path, 'config.json'), 'w') as f:
+        json.dump(copy.deepcopy(_config), f)
     if not test_only:
         trainer.fit(model, datamodule=dm)
     else:
