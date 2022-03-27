@@ -34,7 +34,13 @@ def main(
     pretrained_vision,
     _config
 ):
-    os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
+    if num_nodes > 1:
+        dist_backend = 'horovod'
+        gpus = 1
+    else:
+        dist_backend = 'ddp'
+        gpus = num_gpus
+        os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
     print(_config)
     pl.seed_everything(seed)
     dm = MTDataModule(_config, dist=True)
@@ -69,10 +75,10 @@ def main(
     max_steps = max_steps if max_steps is not None else None
 
     trainer = pl.Trainer(
-        gpus=num_gpus,
+        gpus=gpus,
         num_nodes=num_nodes,
         precision=precision,
-        accelerator="ddp",
+        accelerator=dist_backend,
         benchmark=True,
         deterministic=True,
         max_epochs=max_epoch if max_steps is None else 1000,

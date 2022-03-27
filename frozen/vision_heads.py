@@ -169,4 +169,4 @@ def wrap_vis_encoder(
     setattr(model, attr_key, head_module)
     model.num_tokens = head_module.num_tokens
     if freeze_model:
-        ENCODER_FACTORY[encoder_name]['freeze_func'](model, verbose=True)
+        ENCODER_FACTORY[encoder_name]['freeze_func'](model, verbose=False)
