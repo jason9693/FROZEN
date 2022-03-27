@@ -1,6 +1,6 @@
 import torch
 import unittest
-from frozen.models import FrozenModel, LitFROZEN
+from frozen.models import FrozenModel, GPT2LitFROZEN
 from transformers import AutoTokenizer
 
 model_names = ["gpt2", "bert-base-uncased"]
@@ -10,7 +10,7 @@ c=3
 d=256
 
 def setup(model_name, **kwargs):
-    model = LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
+    model = GPT2LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
     tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
     model.set_tokenizer(tokenizer)
     return model, tokenizer
@@ -18,7 +18,7 @@ mok_img = torch.rand(b,c,d,d)
 
 class TestLitFROZEN(unittest.TestCase):
     def setup(model_name, **kwargs):
-        model = LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
+        model = GPT2LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
         tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
         model.set_tokenizer(tokenizer)
         return model, tokenizer

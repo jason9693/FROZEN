@@ -1,10 +1,12 @@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
-python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_vqa per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/duel/frv
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="global" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/global/frv
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="local" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/local/frv
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/duel
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="global" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/global
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="local" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/local
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/duel/frv lm='google/electra-base-discriminator'
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="global" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/global/frv lm='google/electra-base-discriminator'
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="local" pretrained_vision=True $@ log_dir=/project/result/frozen_electra/local/frv lm='google/electra-base-discriminator'
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/duel lm='google/electra-base-discriminator'
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="global" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/global lm='google/electra-base-discriminator'
+#python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_electra per_gpu_batchsize=32 vis_mode="local" pretrained_vision=False $@ log_dir=/project/result/frozen_electra/local lm='google/electra-base-discriminator'

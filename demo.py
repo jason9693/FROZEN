@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
-from frozen.models import LitFROZEN
+from frozen.models import GPT2LitFROZEN
 from frozen.transforms import pixelbert_transform
 
 VIS_MODE_DICT = {
@@ -91,7 +91,7 @@ def main():
     vis_mode = VIS_MODE_DICT[vis_mode]['model_key']
     with st.spinner('Loading the selected model, please wait...'):
         if state.get(f'{vis_mode}_model') is None:
-            model = LitFROZEN.from_pretrained(lm, emb_key=emb_key, vis_mode=vis_mode)
+            model = GPT2LitFROZEN.from_pretrained(lm, emb_key=emb_key, vis_mode=vis_mode)
             checkpoint = torch.load(load_path, map_location='cpu')
             model.load_state_dict(checkpoint['state_dict'])
             if state.get('tokenizer') is not None:

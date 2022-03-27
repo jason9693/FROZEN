@@ -1,9 +1,10 @@
 import os
 import copy
 import pytorch_lightning as pl
+from transformers import ElectraTokenizerFast
 
 from frozen.config import ex
-from frozen.models import LitFROZEN
+from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
 
 import pdb
@@ -45,13 +46,24 @@ def main(
     pl.seed_everything(seed)
     dm = MTDataModule(_config, dist=True)
 
-    model = LitFROZEN.from_pretrained(
-        lm,
-        emb_key=emb_key,
-        vis_mode=vis_mode,
-        vision_path=v_encoder,
-        pretrained_vision=pretrained_vision
-    )
+    if 'gpt' in lm:
+        model = GPT2LitFROZEN.from_pretrained(
+            lm,
+            emb_key=emb_key,
+            vis_mode=vis_mode,
+            vision_path=v_encoder,
+            pretrained_vision=pretrained_vision
+        )
+    elif 'electra' in lm:
+        model = ElectraLitFROZEN.from_pretrained(
+            lm,
+            emb_key=emb_key,
+            vis_mode=vis_mode,
+            vision_path=v_encoder,
+            pretrained_vision=pretrained_vision
+        )
+    else:
+        raise ValueError
     model.set_tokenizer(dm.tokenizer)
     exp_name = f'{exp_name}'
 
