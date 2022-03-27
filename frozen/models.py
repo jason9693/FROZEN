@@ -25,9 +25,9 @@ class LitFROZEN(pl.LightningModule):
         self.vis_mode = vis_mode
     
     def forward(self, img, tokens, **kwargs):
-        return self._generate_embeds(self.v_encoder(img), tokens, **kwargs)
+        return self._generate_zero_shot_embeds(self.v_encoder(img), tokens, **kwargs)
 
-    def _generate_embeds(self, vis_embed, tokens, **kwargs):
+    def _generate_zero_shot_embeds(self, vis_embed, tokens, **kwargs):
         input_ids = tokens["input_ids"]
         device = input_ids.device
         if "Model" in type(self.lm).__name__ and "Head" not in type(self.lm).__name__:
@@ -40,7 +40,30 @@ class LitFROZEN(pl.LightningModule):
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
-    
+
+    # todo
+    def _generate_few_shot_embeds(self, vis_embeds, tokens, **kwargs):
+        input_ids = tokens["input_ids"]  # type: [tokens]
+        lengths = [ii.size(1) for ii in input_ids]
+        input_ids = torch.cat(input_ids, dim=0)
+        device = input_ids.device
+        if "Model" in type(self.lm).__name__ and "Head" not in type(self.lm).__name__:
+            nlp_embed = self.lm.wte(input_ids)
+        else:
+            nlp_embed = self.lm.transformer.wte(input_ids)
+        inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
+        input_embeds = []
+        attention_masks = []
+        i = 0
+        for idx, (length, vis_embed) in enumerate(zip(lengths, vis_embeds)):
+            input_embeds.extend([vis_embed, nlp_embed[:, i:length]])
+            attention_masks.extend([torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"][idx]])
+            i += length
+        inputs["inputs_embeds"] = torch.cat(input_embeds, 1)
+        inputs["attention_mask"] = torch.cat(attention_masks, 1)
+        lm_output = self.lm(**inputs, **kwargs)
+        return lm_output
+
     @classmethod
     def from_pretrained(
         cls,
@@ -61,7 +84,8 @@ class LitFROZEN(pl.LightningModule):
             num_global_tokens,
             num_local_tokens,
             vision_path,
-            vis_mode
+            vis_mode,
+            pretrained_vision
         )
         lm = AutoModelForCausalLM.from_pretrained(hface_path)
         return cls(vision, lm, **kwargs)
@@ -87,11 +111,26 @@ class LitFROZEN(pl.LightningModule):
     def decode(self, input_ids):
         return self.tokenizer.decode(input_ids)
 
-    def vqa_infer_once(self, img, tokens, max_length):
-        assert img.size(0) == 1, 'vqa_infer_once method does not support batch inference.'
+    def zero_shot_infer(self, img, tokens, max_length):
+        assert img.size(0) == 1, 'zero_shot_infer method does not support batch inference.'
         vis_embed = self.v_encoder(img)
         for i in range(max_length):
-            output = self._generate_embeds(vis_embed, tokens)
+            output = self._generate_zero_shot_embeds(vis_embed, tokens)
+            output = output.logits[0].argmax(dim=-1)
+            if output[-1] == self.tokenizer.eos_token_id or i+1 == max_length:
+                return output[-i-1:-1]
+            input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
+            tokens = self.encode(self.decode(input_ids))
+            tokens = dict(
+                input_ids=torch.tensor(tokens['input_ids']).unsqueeze(0).to(self.device),
+                attention_mask=torch.tensor(tokens['attention_mask']).unsqueeze(0).to(self.device)
+            )
+
+    def few_shot_infer(self, imgs, tokens, max_length):
+        assert imgs.size(0) == 1, 'few_shot_infer method does not support batch inference.'
+        vis_embed = self.v_encoder(imgs)
+        for i in range(max_length):
+            output = self._generate_zero_shot_embeds(vis_embed, tokens)
             output = output.logits[0].argmax(dim=-1)
             if output[-1] == self.tokenizer.eos_token_id or i+1 == max_length:
                 return output[-i-1:-1]

@@ -1,0 +1,42 @@
+[
+  {
+    "image": "/project/FROZEN/examples/images/example_0.png",
+    "input_text": "What is the color of the car?",
+    "is_question": true
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_1.png",
+    "input_text": "Where is the place?",
+    "is_question": true
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_2.png",
+    "input_text": "What is the color of the flowers?",
+    "is_question": true
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_3.png",
+    "input_text": "If I ask you how the weather is, then you will say",
+    "is_question": false
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_4.png",
+    "input_text": "What is the mustache made of?",
+    "is_question": true
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_5.png",
+    "input_text": "What does he grap?",
+    "is_question": true
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_6.png",
+    "input_text": "The car will be",
+    "is_question": false
+  },
+  {
+    "image": "/project/FROZEN/examples/images/example_8.png",
+    "input_text": "On the wall,",
+    "is_question": false
+  }
+]
