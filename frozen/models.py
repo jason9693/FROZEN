@@ -1,11 +1,9 @@
-import time
-
 import torch
 import timm
 from transformers import AutoConfig, AutoModelForCausalLM
 import pytorch_lightning as pl
 
-from frozen.vision_heads import wrap_vis_encoder
+from frozen.vision_heads import wrap_vis_encoder, VisionAttentionHead
 
 
 class GPT2LitFROZEN(pl.LightningModule):
@@ -13,6 +11,7 @@ class GPT2LitFROZEN(pl.LightningModule):
         self,
         vision_model,
         nlp_model,
+        vis_token_proj=None,
         vis_mode='global',
         mlm=False,
         plm=True
@@ -25,6 +24,9 @@ class GPT2LitFROZEN(pl.LightningModule):
         self.mlm = mlm
         self.plm = plm
         self.vis_mode = vis_mode
+        self.vis_token_proj = vis_token_proj
+        if vis_token_proj is not None:
+            self.v_encoder.num_tokens = vis_token_proj.num_output_tokens
     
     def forward(self, img, tokens, **kwargs):
         return self._generate_zero_shot_embeds(self.v_encoder(img), tokens, **kwargs)
@@ -37,6 +39,8 @@ class GPT2LitFROZEN(pl.LightningModule):
         else:
             nlp_embed = self.lm.transformer.wte(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
+        if self.vis_token_proj is not None:
+            vis_embed = self.vis_token_proj(vis_embed, nlp_embed)
         inputs["inputs_embeds"] = torch.cat([vis_embed, nlp_embed], 1)
         inputs["attention_mask"] = torch.cat(
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
@@ -57,6 +61,7 @@ class GPT2LitFROZEN(pl.LightningModule):
         vis_mode='global',
         num_global_tokens=2,
         local_output_size=4,
+        num_vision_tokens=None,
         **kwargs
     ):
         lm_config = AutoConfig.from_pretrained(hface_path)
@@ -70,8 +75,17 @@ class GPT2LitFROZEN(pl.LightningModule):
             vis_mode,
             pretrained_vision
         )
+        # todo: modify naming to prevent confusing...
+        if num_vision_tokens is not None:
+            vis_token_proj = VisionAttentionHead(
+                dim=lm_config.to_dict()[emb_key],
+                num_vision_tokens=vision.num_tokens,
+                num_output_tokens=num_vision_tokens
+            )
+        else:
+            vis_token_proj = None
         lm = AutoModelForCausalLM.from_pretrained(hface_path)
-        return cls(vision, lm, **kwargs)
+        return cls(vision, lm, vis_token_proj, **kwargs)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
@@ -118,7 +132,7 @@ class GPT2LitFROZEN(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         img = train_batch["image"][0]
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         if self.plm:
             tokens = train_batch["text_ids"]
             mask = train_batch["text_masks"]
@@ -154,7 +168,7 @@ class GPT2LitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         output = self.forward(img, tokens)
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
         img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
@@ -172,7 +186,10 @@ class ElectraLitFROZEN(pl.LightningModule):
         self,
         vision_model,
         nlp_model,
+        vis_token_proj=None,
         vis_mode='global',
+        mlm=False,
+        plm=True
     ):
         super().__init__()
         self.lm = nlp_model
@@ -184,6 +201,11 @@ class ElectraLitFROZEN(pl.LightningModule):
             param.requires_grad = True
         self.v_encoder = vision_model
         self.vis_mode = vis_mode
+        self.mlm = mlm
+        self.plm = plm
+        self.vis_token_proj = vis_token_proj
+        if vis_token_proj is not None:
+            self.v_encoder.num_tokens = vis_token_proj.num_output_tokens
 
     def forward(self, img, tokens, **kwargs):
         return self._generate_zero_shot_embeds(self.v_encoder(img), tokens, **kwargs)
@@ -193,6 +215,8 @@ class ElectraLitFROZEN(pl.LightningModule):
         device = input_ids.device
         nlp_embed = self.lm.electra.embeddings.word_embeddings(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
+        if self.vis_token_proj is not None:
+            vis_embed = self.vis_token_proj(vis_embed, nlp_embed)
         inputs["inputs_embeds"] = torch.cat([vis_embed, nlp_embed], 1)
         inputs["attention_mask"] = torch.cat(
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
@@ -213,6 +237,7 @@ class ElectraLitFROZEN(pl.LightningModule):
         vis_mode='global',
         num_global_tokens=2,
         local_output_size=4,
+        num_vision_tokens=None,
         **kwargs
     ):
         lm_config = AutoConfig.from_pretrained(hface_path)
@@ -226,8 +251,17 @@ class ElectraLitFROZEN(pl.LightningModule):
             vis_mode,
             pretrained_vision
         )
+        # todo: modify naming to prevent confusing...
+        if num_vision_tokens is not None:
+            vis_token_proj = VisionAttentionHead(
+                dim=lm_config.to_dict()[emb_key],
+                num_vision_tokens=vision.num_tokens,
+                num_output_tokens=num_vision_tokens
+            )
+        else:
+            vis_token_proj = None
         lm = AutoModelForCausalLM.from_pretrained(hface_path)
-        return cls(vision, lm, **kwargs)
+        return cls(vision, lm, vis_token_proj, **kwargs)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
@@ -274,7 +308,7 @@ class ElectraLitFROZEN(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         img = train_batch["image"][0]
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         if self.plm:
             tokens = train_batch["text_ids"]
             mask = train_batch["text_masks"]
@@ -310,7 +344,7 @@ class ElectraLitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         output = self.forward(img, tokens)
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.mask_token_id
         img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
@@ -321,39 +355,4 @@ class ElectraLitFROZEN(pl.LightningModule):
 
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
-
-
-class ElectraLitFrozenCausalLM(ElectraLitFROZEN):
-    def training_step(self, train_batch, batch_idx):
-        img = train_batch["image"][0]
-        b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss()
-        tokens = train_batch["text_ids"]
-        mask = train_batch["text_masks"]
-        tokens = {
-            "input_ids": tokens,
-            "attention_mask": mask
-        }
-        eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.mask_token_id
-        img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
-        target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
-        loss = self.train_forward(img, tokens, loss_fn, target)
-        self.log('train_plm_loss', loss)
-        return loss
-
-
-class ElectraLitFrozenMaskedLM(ElectraLitFROZEN):
-    def training_step(self, train_batch, batch_idx):
-        img = train_batch["image"][0]
-        loss_fn = torch.nn.CrossEntropyLoss()
-        tokens = train_batch["text_ids_mlm"]
-        mask = train_batch["text_masks"]
-        tokens = {
-            "input_ids": tokens,
-            "attention_mask": mask
-        }
-        target = train_batch["text_labels_mlm"]
-        loss = self.train_forward(img, tokens, loss_fn, target)
-        self.log('train_mlm_loss', loss)
-        return loss
 

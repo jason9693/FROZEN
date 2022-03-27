@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from frozen.config import ex
 from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
+from frozen.vision_heads import VisionAttentionHead
 
 
 @ex.automain
@@ -31,6 +32,7 @@ def main(
     test_only,
     vis_mode,
     pretrained_vision,
+    num_vision_tokens,
     _config
 ):
     if num_nodes > 1:
@@ -50,6 +52,7 @@ def main(
             emb_key=emb_key,
             vis_mode=vis_mode,
             vision_path=v_encoder,
+            num_vision_tokens=num_vision_tokens,
             pretrained_vision=pretrained_vision
         )
     elif 'electra' in lm:
@@ -58,6 +61,7 @@ def main(
             emb_key=emb_key,
             vis_mode=vis_mode,
             vision_path=v_encoder,
+            num_vision_tokens=num_vision_tokens,
             pretrained_vision=pretrained_vision
         )
     else:

@@ -63,21 +63,20 @@ class InteractiveAttention(nn.Module):
         else:
             self.token_proj = nn.Identity()
 
-    def forward(self, x):
-        output = x
+    def forward(self, vis_embed, nlp_embed):
+        output = torch.cat([vis_embed, nlp_embed], dim=1)
         b, n, d = output.shape
-        q = self.q(output[:, :self.num_vision_tokens])
-        q = q.reshape(b, self.num_vision_tokens, 3, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
-        kv = self.kv(output).reshape(b, n, 3, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        q = self.q(vis_embed)
+        q = q.reshape(b, self.num_vision_tokens, 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        kv = self.kv(output).reshape(b, n, 2, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
         k, v = kv.unbind(0)
 
         attn = (q@k.transpose(-2, -1))*self.scale
         attn = attn.softmax(dim=-1)
 
-        output = (attn@v).transpose(1, 2).reshape(b, n, d)
+        output = (attn@v).transpose(1, 2).reshape(*vis_embed.size())
         output = self.proj(output)
         output = self.token_proj(output.permute(0, 2, 1)).permute(0, 2, 1)
-        output = torch.cat([output, x[:, self.num_vision_tokens:]], dim=1)
         return output
 
 
@@ -103,12 +102,12 @@ class VisionAttentionHead(nn.Module):
             for _ in range(num_attentions-1)
         ]
         attn.append(InteractiveAttention(dim, num_vision_tokens, num_heads, qkv_bias, num_output_tokens))
-        self.attn = nn.Sequential(*attn)
+        self.attn = nn.ModuleList(attn)
 
-    def forward(self, v_tokens, nlp_tokens):
-        tokens = torch.cat([v_tokens, nlp_tokens], dim=1)
-        output = self.attn(tokens)
-        output = output[:, :self.num_vision_tokens]
+    def forward(self, vis_embed, nlp_embed):
+        output = vis_embed
+        for att in self.attn:
+            output = att(output, nlp_embed)
         return output
 
 

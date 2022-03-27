@@ -20,7 +20,7 @@ def _loss_names(d):
 
 @ex.config
 def config():
-    exp_name = "frozen"
+    exp_name = ""
     seed = 0
     datasets = ["vqa"]
     loss_names = _loss_names({"itm": 1, "mlm": 1})
@@ -85,10 +85,10 @@ def config():
     vis_mode = "global"
     v_encoder = "nf_resnet50"
     pretrained_vision = False
+    num_vision_tokens = None
 
 @ex.named_config
-def task_finetune_vqa():
-    exp_name = "finetune_vqa"
+def task_finetune_gpt2():
     datasets = ["coco"]
     loss_names = _loss_names({"itm": 1})
     batch_size = 512
@@ -102,7 +102,6 @@ def task_finetune_vqa():
 
 @ex.named_config
 def task_finetune_electra():
-    exp_name = "finetune_electra"
     lm = "google/electra-small-discriminator"
     datasets = ["coco"]
     loss_names = _loss_names({"itm": 1})
