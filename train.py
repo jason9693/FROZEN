@@ -2,11 +2,11 @@ import copy
 import json
 import os
 import pytorch_lightning as pl
+from transformers import AutoTokenizer
 
 from frozen.config import ex
 from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
-from frozen.vision_heads import VisionAttentionHead
 
 
 @ex.automain
@@ -56,6 +56,7 @@ def main(
             pretrained_vision=pretrained_vision
         )
     elif 'electra' in lm:
+        dm.tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         model = ElectraLitFROZEN.from_pretrained(
             lm,
             emb_key=emb_key,

@@ -132,7 +132,7 @@ class GPT2LitFROZEN(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         img = train_batch["image"][0]
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
+        loss_fn = torch.nn.CrossEntropyLoss()
         if self.plm:
             tokens = train_batch["text_ids"]
             mask = train_batch["text_masks"]
@@ -168,7 +168,7 @@ class GPT2LitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         b_size = img.size()[0]
-        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
+        loss_fn = torch.nn.CrossEntropyLoss()
         output = self.forward(img, tokens)
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
         img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
@@ -275,7 +275,7 @@ class ElectraLitFROZEN(pl.LightningModule):
 
     def train_forward(self, img, tokens, loss_fn, target):
         output = self.forward(img, tokens)
-        loss = loss_fn(output.logits.transpose(-1, -2), target.to(torch.long))
+        loss = loss_fn(output.logits[:, :-1].transpose(-1, -2), target.to(torch.long))
         return loss
 
     def encode(self, text):
@@ -291,7 +291,8 @@ class ElectraLitFROZEN(pl.LightningModule):
         for i in range(max_length):
             output = self._generate_zero_shot_embeds(vis_embed, tokens)
             output = output.logits[0].argmax(dim=-1)
-            if output[-1] == self.tokenizer.mask_token_id or i+1 == max_length:
+            if output[-1] == self.tokenizer.sep_token_id or i+1 == max_length:
+                # return output
                 return output[-i-1:-1]
             input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
             tokens = self.encode(self.decode(input_ids))
@@ -316,9 +317,10 @@ class ElectraLitFROZEN(pl.LightningModule):
                 "input_ids": tokens,
                 "attention_mask": mask
             }
-            eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.mask_token_id
+            # eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.sep_token_id
             img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
-            target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
+            # target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)
+            target = torch.cat([img_pad_tensor, tokens["input_ids"]], -1)[:, 1:]
             loss = self.train_forward(img, tokens, loss_fn, target)
             self.log('train_plm_loss', loss)
         elif self.mlm:
@@ -346,10 +348,10 @@ class ElectraLitFROZEN(pl.LightningModule):
         b_size = img.size()[0]
         loss_fn = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
         output = self.forward(img, tokens)
-        eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.mask_token_id
+        # eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.sep_token_id
         img_pad_tensor = torch.ones(b_size, self.v_encoder.num_tokens).to(img.device)*self.tokenizer.pad_token_id
-        target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
-        loss = loss_fn(output.logits.transpose(-1, -2), target.to(torch.long))
+        target = torch.cat([img_pad_tensor, tokens["input_ids"]], -1)[:, 1:]
+        loss = loss_fn(output.logits[:, :-1].transpose(-1, -2), target.to(torch.long))
         self.log('val_loss', loss)
         return loss
 

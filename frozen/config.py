@@ -116,3 +116,21 @@ def task_finetune_electra():
 
     ## huggingface lm config
     emb_key = "embedding_size"
+
+@ex.named_config
+def task_finetune_electra_masked():
+    lm = "google/electra-small-discriminator"
+    datasets = ["coco"]
+    loss_names = _loss_names({"mlm": 1})
+    batch_size = 512
+    max_epoch = 10
+    max_steps = None
+    warmup_steps = 0.1
+    draw_false_image = 0
+    learning_rate = 1e-4
+    val_check_interval = 0.1
+    lr_mult = 10
+    mlm_prob = 0.15
+
+    ## huggingface lm config
+    emb_key = "embedding_size"

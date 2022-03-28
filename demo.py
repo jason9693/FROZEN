@@ -6,6 +6,7 @@ from io import BytesIO
 import streamlit as st
 import torch
 from PIL import Image
+from transformers import AutoTokenizer
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
 from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
@@ -115,10 +116,14 @@ def main():
                     raise ValueError
                 checkpoint = torch.load(load_path, map_location='cpu')
                 model.load_state_dict(checkpoint['state_dict'])
-                if state.get('tokenizer') is not None:
-                    tokenizer = state.tokenizer
+                if state.get(f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER') is not None:
+                    tokenizer = state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER']
                 else:
-                    tokenizer = get_pretrained_tokenizer(lm, emb_key=emb_key, pad_token=pad_token)
+                    if 'electra' in lm:
+                        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+                    else:
+                        tokenizer = get_pretrained_tokenizer(lm, emb_key=emb_key, pad_token=pad_token)
+                    state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER'] = tokenizer
                 model.set_tokenizer(tokenizer)
                 model.setup('test')
                 model.eval().cuda()
