@@ -43,11 +43,11 @@ class DuelEmbeddingHead(nn.Module):
 
 
 class InteractiveAttention(nn.Module):
-    def __init__(self, dim, num_vision_tokens, num_heads=8, qkv_bias=False, num_output_tokens=None):
+    def __init__(self, dim, num_input_tokens, num_heads=8, qkv_bias=False, num_output_tokens=None):
         super().__init__()
         assert dim % num_heads == 0, 'dim should be divisible by num_heads'
         self.dim = dim
-        self.num_vision_tokens = num_vision_tokens
+        self.num_input_tokens = num_input_tokens
         self.num_heads = num_heads
         self.qkv_bias = qkv_bias
         self.num_output_tokens = num_output_tokens
@@ -59,7 +59,7 @@ class InteractiveAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
 
         if num_output_tokens is not None:
-            self.token_proj = nn.Linear(num_vision_tokens, num_output_tokens)
+            self.token_proj = nn.Linear(num_input_tokens, num_output_tokens)
         else:
             self.token_proj = nn.Identity()
 
@@ -67,7 +67,7 @@ class InteractiveAttention(nn.Module):
         output = torch.cat([vis_embed, nlp_embed], dim=1)
         b, n, d = output.shape
         q = self.q(vis_embed)
-        q = q.reshape(b, self.num_vision_tokens, 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        q = q.reshape(b, self.num_input_tokens, 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
         kv = self.kv(output).reshape(b, n, 2, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
         k, v = kv.unbind(0)
 
@@ -84,24 +84,24 @@ class VisionAttentionHead(nn.Module):
     def __init__(
         self,
         dim,
-        num_vision_tokens,
-        num_attentions=2,
+        num_input_tokens,
+        num_attentions=1,
         num_heads=8,
         qkv_bias=False,
         num_output_tokens=None
     ):
         super().__init__()
         self.dim = dim
-        self.num_vision_tokens = num_vision_tokens
+        self.num_input_tokens = num_input_tokens
         self.num_attentions = num_attentions
         self.num_heads = num_heads
         self.qkv_bias = qkv_bias
         self.num_output_tokens = num_output_tokens
         attn = [
-            InteractiveAttention(dim, num_vision_tokens, num_heads, qkv_bias, None)
+            InteractiveAttention(dim, num_input_tokens, num_heads, qkv_bias, None)
             for _ in range(num_attentions-1)
         ]
-        attn.append(InteractiveAttention(dim, num_vision_tokens, num_heads, qkv_bias, num_output_tokens))
+        attn.append(InteractiveAttention(dim, num_input_tokens, num_heads, qkv_bias, num_output_tokens))
         self.attn = nn.ModuleList(attn)
 
     def forward(self, vis_embed, nlp_embed):

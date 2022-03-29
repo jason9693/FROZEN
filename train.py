@@ -1,11 +1,11 @@
 import copy
 import json
 import os
+
 import pytorch_lightning as pl
-from transformers import AutoTokenizer
 
 from frozen.config import ex
-from frozen.models import GPT2LitFROZEN, ElectraLitFROZEN
+from frozen.models import GPT2LitFROZEN, ElectraMaskedLitFROZEN, BertMaskedLitFROZEN, BertLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
 
 
@@ -13,7 +13,7 @@ from frozen.datamodules.multitask_datamodule import MTDataModule
 def main(
     seed,
     lm,
-    v_encoder,
+    vis_path,
     emb_key,
     exp_name,
     log_dir,
@@ -32,7 +32,8 @@ def main(
     test_only,
     vis_mode,
     pretrained_vision,
-    num_vision_tokens,
+    num_vis_tokens,
+    loss_names,
     _config
 ):
     if num_nodes > 1:
@@ -51,20 +52,38 @@ def main(
             lm,
             emb_key=emb_key,
             vis_mode=vis_mode,
-            vision_path=v_encoder,
-            num_vision_tokens=num_vision_tokens,
+            vis_path=vis_path,
+            num_vis_tokens=num_vis_tokens,
             pretrained_vision=pretrained_vision
         )
     elif 'electra' in lm:
-        dm.tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        model = ElectraLitFROZEN.from_pretrained(
+        model = ElectraMaskedLitFROZEN.from_pretrained(
             lm,
             emb_key=emb_key,
             vis_mode=vis_mode,
-            vision_path=v_encoder,
-            num_vision_tokens=num_vision_tokens,
+            vis_path=vis_path,
+            num_vis_tokens=num_vis_tokens,
             pretrained_vision=pretrained_vision
         )
+    elif 'bert' in lm:
+        if loss_names['itm'] == 1:
+            model = BertLitFROZEN.from_pretrained(
+                lm,
+                emb_key=emb_key,
+                vis_mode=vis_mode,
+                vis_path=vis_path,
+                num_vis_tokens=num_vis_tokens,
+                pretrained_vision=pretrained_vision
+            )
+        else:
+            model = BertMaskedLitFROZEN.from_pretrained(
+                lm,
+                emb_key=emb_key,
+                vis_mode=vis_mode,
+                vis_path=vis_path,
+                num_vis_tokens=num_vis_tokens,
+                pretrained_vision=pretrained_vision
+            )
     else:
         raise ValueError
     model.set_tokenizer(dm.tokenizer)
@@ -78,9 +97,12 @@ def main(
         mode="min",
         save_last=True,
     )
-    logger = pl.loggers.TensorBoardLogger(
+    logger_name = f'{exp_name}_seed{seed}'
+    if load_path:
+        logger_name += f'_from_{load_path.split("/")[-1][:-5]}'
+    tb_logger = pl.loggers.TensorBoardLogger(
         log_dir,
-        name=f'{exp_name}_seed{seed}_from_{load_path.split("/")[-1][:-5]}',
+        name=logger_name
     )
     callbacks = [checkpoint_callback]
 
@@ -99,7 +121,7 @@ def main(
         max_epochs=max_epoch if max_steps is None else 1000,
         max_steps=max_steps,
         callbacks=callbacks,
-        logger=logger,
+        logger=tb_logger,
         prepare_data_per_node=False,
         replace_sampler_ddp=False,
         accumulate_grad_batches=grad_steps,
@@ -111,7 +133,13 @@ def main(
         val_check_interval=val_check_interval,
         amp_level=amp_level
     )
-    with open(os.path.join(trainer.weights_save_path, 'config.json'), 'w') as f:
+    version_path = os.path.join(
+        trainer.logger.save_dir,
+        trainer.logger.name,
+        f'version_{trainer.logger.version}'
+    )
+    os.makedirs(version_path, exist_ok=True)
+    with open(os.path.join(version_path, 'config.json'), 'w') as f:
         json.dump(copy.deepcopy(_config), f)
     if not test_only:
         trainer.fit(model, datamodule=dm)

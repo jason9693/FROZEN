@@ -119,10 +119,7 @@ def main():
                 if state.get(f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER') is not None:
                     tokenizer = state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER']
                 else:
-                    if 'electra' in lm:
-                        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-                    else:
-                        tokenizer = get_pretrained_tokenizer(lm, emb_key=emb_key, pad_token=pad_token)
+                    tokenizer = get_pretrained_tokenizer(lm, emb_key=emb_key, pad_token=pad_token)
                     state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER'] = tokenizer
                 model.set_tokenizer(tokenizer)
                 model.setup('test')
