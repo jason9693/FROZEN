@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 import random
@@ -11,36 +12,15 @@ import torch
 from PIL import Image
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
-from frozen.models import GPT2LitFROZEN, ElectraMaskedLitFROZEN, BertMaskedLitFROZEN
-from frozen.profiles import VIS_MODE_DICT, LM_MODE_DICT
+from frozen.models import BiFrostBase
 from frozen.transforms import pixelbert_transform
 
 
 PYTHON_PATH = os.path.abspath('./')
-DEMO_VIS_MODE_DICT = {
-    'GLOBAL+LOCAL': dict(**VIS_MODE_DICT['duel']),
-    'GLOBAL': dict(**VIS_MODE_DICT['global']),
-    'LOCAL': dict(**VIS_MODE_DICT['local'])
-}
-DEMO_LM_MODE_DICT = {
-    'GPT2': dict(**LM_MODE_DICT['gpt2']),
-    'ELECTRA-BASE': dict(**LM_MODE_DICT['electra-base']),
-    'BERT-BASE': dict(**LM_MODE_DICT['bert-base'])
-}
 
 
-def _get_model(lm_mode, vis_mode):
-    path_key = f'{DEMO_LM_MODE_DICT[lm_mode]["demo_path"]}_{DEMO_VIS_MODE_DICT[vis_mode]["demo_path"]}'
-    path = os.path.join(PYTHON_PATH, f'BiFROST_{path_key}.ckpt')
-    hpath = DEMO_LM_MODE_DICT[lm_mode]['lm']
-    emb_key = DEMO_LM_MODE_DICT[lm_mode]['emb_key']
-    vis_mode = DEMO_VIS_MODE_DICT['mode']
-    num_vis_tokens = DEMO_VIS_MODE_DICT['num_vis_tokens']
-    model = DEMO_LM_MODE_DICT[lm_mode]['cls'].from_pretrained(
-        hpath, emb_key=emb_key, vis_mode=vis_mode, num_vis_tokens=num_vis_tokens)
-    state_dict = torch.load(path)['state_dict']
-    model.load_state_dict(state_dict)
-    return model
+def get_all_checkpoint_paths(root_dir=os.path.join(PYTHON_PATH, 'BiFrost'), path_format='BiFrost*.ckpt'):
+    return list(glob.glob(os.path.join(root_dir, path_format)))
 
 
 def convert_to_inputs(img_input, image_size):
@@ -50,6 +30,10 @@ def convert_to_inputs(img_input, image_size):
         image = img_input
     image_tensor = pixelbert_transform(size=image_size)(image).unsqueeze(0)
     return image, image_tensor
+
+
+def load_and_profile(path):
+    return BiFrostBase.from_bifrost_checkpoint(path)
 
 
 @torch.no_grad()
@@ -62,10 +46,9 @@ def infer_and_export(
     use_random_masking,
     max_length,
     masking_rate,
-    inference_method,
     info=None
 ):
-    if inference_method == 'plm':
+    if model.INFERENCE_METHOD == 'plm':
         plm_infer_and_export(model, image_tensor, image, input_text, is_question, max_length, info)
     else:
         mlm_infer_and_export(model, image_tensor, image, input_text, use_random_masking, masking_rate, info)
@@ -156,49 +139,38 @@ def mlm_infer_and_export(model, image_tensor, image, input_text, use_random_mask
 
 def main():
     st.sidebar.title('BiFrost VQAv2 Demo')
-    selected_lm_mode = st.sidebar.selectbox('Choose a language model.', list(DEMO_LM_MODE_DICT.keys()))
-    lm = DEMO_LM_MODE_DICT[selected_lm_mode]['lm']
-    emb_key = DEMO_LM_MODE_DICT[selected_lm_mode]['emb_key']
-    pad_token = DEMO_LM_MODE_DICT[selected_lm_mode].get('pad_token')
     image_size = 384
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
     torch.cuda.set_device(torch.cuda.device_count()-1)  # use last device
     state = st.session_state
-    selected_vis_mode = st.sidebar.selectbox(
-        'Choose a method to put visual token.',
-        list(DEMO_VIS_MODE_DICT.keys())
-    )
-    info = {'Language Model': selected_lm_mode, 'Vision Token Type': selected_vis_mode, 'Input Image Size': image_size}
-    path_key = '_'.join([DEMO_LM_MODE_DICT[selected_lm_mode]['demo_path'], DEMO_VIS_MODE_DICT[selected_vis_mode]['demo_path']])
-    inference_method = DEMO_LM_MODE_DICT[selected_lm_mode]['inference_method']
-    load_path = f'/project/FROZEN/FROZEN_{path_key}_pretrained.ckpt'
+    checkpoint_list = get_all_checkpoint_paths()
+    load_path = st.sidebar.selectbox('Choose a checkpoint to load.', checkpoint_list)
     if not os.path.exists(load_path):
         st.sidebar.error(f'Cannot load the model: {load_path}')
     else:
         with st.spinner('Loading the selected model, please wait...'):
-            if state.get(f'{selected_lm_mode}_{selected_vis_mode}_MODEL') is None:
-                model = _get_model(selected_lm_mode, selected_vis_mode)
+            if load_path in state:
+                model, config, tokenizer = state[load_path]
+            else:
+                model, config = load_and_profile(load_path)
                 checkpoint = torch.load(load_path, map_location='cpu')
                 model.load_state_dict(checkpoint['state_dict'])
-                if state.get(f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER') is not None:
-                    tokenizer = state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER']
-                else:
-                    tokenizer = get_pretrained_tokenizer(lm, emb_key=emb_key, pad_token=pad_token)
-                    state[f'{selected_lm_mode}_{selected_vis_mode}_TOKENIZER'] = tokenizer
+                tokenizer = get_pretrained_tokenizer(
+                    config['hface_path'], emb_key=config['emb_key'], pad_token=config['pad_token'])
                 model.set_tokenizer(tokenizer)
                 model.setup('test')
                 model.eval().cuda()
-                state[f'{selected_lm_mode}_{selected_vis_mode}_MODEL'] = model
-                state[f'{selected_lm_mode}_{selected_vis_mode}_INFERENCE_METHOD'] = inference_method
-            else:
-                model = state[f'{selected_lm_mode}_{selected_vis_mode}_MODEL']
-                inference_method = state[f'{selected_lm_mode}_{selected_vis_mode}_INFERENCE_METHOD']
+                state[load_path] = (model, config, tokenizer)
+        info = {
+            'Language Model': model.LANGUAGE_MODEL,
+            'Vision Token Type': config['vis_mode'],
+            'Input Image Size': image_size
+        }
         reload_model = st.sidebar.button('Reload Model')
         if reload_model:
-            if state.get(f'{selected_lm_mode}_{selected_vis_mode}_MODEL') is not None:
-                del state[f'{selected_lm_mode}_{selected_vis_mode}_MODEL']
+            del state[load_path]
             st.experimental_rerun()
-        if inference_method == 'plm':
+        if model.INFERENCE_METHOD == 'plm':
             max_length = st.sidebar.select_slider('Set the maximum length of output sentence.', list(range(10, 31)))
             masking_rate = None
         else:
@@ -228,7 +200,7 @@ def main():
             if does_image_exist:
                 st.image(image, caption='Input Image')
             input_text = st.sidebar.text_input('Write the text input.')
-            if inference_method == 'plm':
+            if model.INFERENCE_METHOD == 'plm':
                 is_question = st.sidebar.checkbox('Transform to question format')
                 use_random_masking = False
             else:
@@ -245,7 +217,6 @@ def main():
                     use_random_masking,
                     max_length,
                     masking_rate,
-                    inference_method,
                     info
                 )
             if does_image_exist and input_text:
@@ -288,7 +259,6 @@ def main():
                 use_random_masking,
                 max_length,
                 masking_rate,
-                inference_method,
                 info
             )
             delete = st.sidebar.button('Delete this example')

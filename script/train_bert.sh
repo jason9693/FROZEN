@@ -4,3 +4,4 @@ python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task
 python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_bert_base per_gpu_batchsize=16 vis_mode="duel" pretrained_vision=False log_dir=/project/result/frozen_bert_base exp_name=bert_base_base_duel $@ --force
 python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_bert_base per_gpu_batchsize=16 vis_mode="local" pretrained_vision=False log_dir=/project/result/frozen_bert_base exp_name=bert_base_base_local $@ --force
 python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_bert_base per_gpu_batchsize=16 vis_mode="global" pretrained_vision=False log_dir=/project/result/frozen_bert_base exp_name=bert_base_base_global $@ --force
+python send_alarm.py

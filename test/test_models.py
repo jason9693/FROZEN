@@ -1,6 +1,6 @@
 import torch
 import unittest
-from frozen.models import GPT2LitFROZEN
+from frozen.models import BiFrostGPT2CausalLM
 from transformers import AutoTokenizer
 
 model_names = ["gpt2", "bert-base-uncased"]
@@ -11,7 +11,7 @@ d = 256
 
 
 def setup(model_name, **kwargs):
-    model = GPT2LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
+    model = BiFrostGPT2CausalLM.from_pretrained(model_name, pretrained_vision=True)
     tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
     model.set_tokenizer(tokenizer)
     return model, tokenizer
@@ -22,7 +22,7 @@ mok_img = torch.rand(b, c, d, d)
 
 class TestLitFROZEN(unittest.TestCase):
     def setup(self, model_name, **kwargs):
-        model = GPT2LitFROZEN.from_pretrained(model_name, pretrained_vision=True)
+        model = BiFrostGPT2CausalLM.from_pretrained(model_name, pretrained_vision=True)
         tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
         model.set_tokenizer(tokenizer)
         return model, tokenizer

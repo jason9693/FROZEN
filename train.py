@@ -1,19 +1,18 @@
 import copy
 import os
+import time
 
 import pytorch_lightning as pl
 
-from frozen.profiles import LM_MODE_DICT
 from frozen.config import ex
 from frozen.datamodules.multitask_datamodule import MTDataModule
+from frozen.models import MODEL_FACTORY
 
 PYTHON_PATH = os.path.abspath('./')
 
-def _get_model(lm_mode, vis_path, vis_mode, num_vis_tokens):
-    hpath = LM_MODE_DICT[lm_mode]['lm']
-    emb_key = LM_MODE_DICT[lm_mode]['emb_key']
-    model = LM_MODE_DICT[lm_mode]['cls'].from_pretrained(
-        hpath, vis_path=vis_path, emb_key=emb_key, vis_mode=vis_mode, num_vis_tokens=num_vis_tokens)
+def _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, num_vis_tokens):
+    model = MODEL_FACTORY[lm_mode].from_pretrained(
+        hface_path, vis_path=vis_path, emb_key=emb_key, vis_mode=vis_mode, num_vis_tokens=num_vis_tokens)
     return model
 
 
@@ -21,6 +20,8 @@ def _get_model(lm_mode, vis_path, vis_mode, num_vis_tokens):
 def main(
     seed,
     lm_mode,
+    hface_path,
+    emb_key,
     ex_tag,
     log_dir,
     load_path,
@@ -52,18 +53,22 @@ def main(
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
     print(_config)
     config_clone = copy.deepcopy(_config)
-    config_clone['tokenizer'] = LM_MODE_DICT[lm_mode]['lm']
-    if 'pad_token' in LM_MODE_DICT[lm_mode]:
-        config_clone['pad_token'] = LM_MODE_DICT[lm_mode]['pad_token']
+    config_clone['tokenizer'] = hface_path
     pl.seed_everything(seed)
     dm = MTDataModule(config_clone, dist=True)
-    path_key = f'{vis_path}_{vis_mode}'
+    path_key = f'{lm_mode}_{vis_path}_{vis_mode}'
     if num_vis_tokens is not None:
         path_key = path_key+'_vh'
     if pretrained_vision:
         path_key = path_key+'_ft'
-
-    model = _get_model(lm_mode, vis_path, vis_mode, num_vis_tokens)
+    model = _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, num_vis_tokens)
+    model.hparams.lm_mode = lm_mode
+    model.hparams.pad_token = config_clone.get('pad_token')
+    model.hparams.hface_path = hface_path
+    model.hparams.emb_key = emb_key
+    model.hparams.vis_path = vis_path
+    model.hparams.vis_mode = vis_mode
+    model.hparams.num_vis_tokens = num_vis_tokens
     file_name = exp_name = f'BiFrost_{path_key}'
     if ex_tag:
         exp_name = f'{exp_name}_{ex_tag}'

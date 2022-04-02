@@ -87,7 +87,9 @@ def config():
 @ex.named_config
 def task_finetune_gpt2():
     lm_mode = 'gpt2'
+    hface_path = 'gpt2'
     datasets = ["coco"]
+    pad_token = '<|endoftext|>'
     loss_names = _loss_names({"itm": 1})
     batch_size = 512
     max_epoch = 10
@@ -101,6 +103,7 @@ def task_finetune_gpt2():
 @ex.named_config
 def task_finetune_electra():
     lm_mode = 'electra-base'
+    hface_path = 'google/electra-base-discriminator'
     datasets = ["coco"]
     loss_names = _loss_names({"mlm": 1})
     batch_size = 512
@@ -118,7 +121,8 @@ def task_finetune_electra():
 
 @ex.named_config
 def task_finetune_bert_base():
-    lm_mode= "bert-base"
+    lm_mode = "bert-base"
+    hface_path = 'bert-base-uncased'
     datasets = ["coco"]
     loss_names = _loss_names({"mlm": 1})
     batch_size = 512

@@ -1,3 +1,5 @@
+import math
+
 import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
@@ -140,6 +142,11 @@ ENCODER_FACTORY = dict(
         attr_keys='head',
         freeze_func=None,
         feat_dim=384
+    ),
+    conv=dict(
+        attr_keys='head',
+        freeze_func=None,
+        feat_dim=384
     )
 )
 HEAD_FACTORY = {
@@ -189,3 +196,30 @@ class LinearPatchEmbed(nn.Module):
 
     def forward(self, x):
         return self.head(self.to_patch_embed(x))
+
+
+class Stem(nn.Module):
+    def __init__(self, dim=384, patch_size=16):
+        super().__init__()
+        in_dim = 3
+        out_dim = 2*dim//patch_size
+        to_patch_embed = []
+        num_ds = int(math.log2(patch_size))
+        for i in range(num_ds-1):
+            to_patch_embed.append(
+                nn.Sequential(
+                    nn.Conv2d(in_dim, out_dim, 3, 2, 1),
+                    nn.BatchNorm2d(out_dim),
+                    nn.GELU()
+                )
+            )
+            in_dim = out_dim
+            out_dim *= 2
+        to_patch_embed.append(nn.Conv2d(in_dim, dim, 3, 2, 1))
+        self.to_patch_embed = nn.Sequential(*to_patch_embed)
+        self.head = nn.Identity()
+
+    def forward(self, x):
+        return self.head(self.to_patch_embed(x))
+
+
