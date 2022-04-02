@@ -1,21 +1,27 @@
 import copy
-import json
 import os
 
 import pytorch_lightning as pl
 
+from frozen.profiles import LM_MODE_DICT
 from frozen.config import ex
-from frozen.models import GPT2LitFROZEN, ElectraMaskedLitFROZEN, BertMaskedLitFROZEN, BertLitFROZEN
 from frozen.datamodules.multitask_datamodule import MTDataModule
+
+PYTHON_PATH = os.path.abspath('./')
+
+def _get_model(lm_mode, vis_path, vis_mode, num_vis_tokens):
+    hpath = LM_MODE_DICT[lm_mode]['lm']
+    emb_key = LM_MODE_DICT[lm_mode]['emb_key']
+    model = LM_MODE_DICT[lm_mode]['cls'].from_pretrained(
+        hpath, vis_path=vis_path, emb_key=emb_key, vis_mode=vis_mode, num_vis_tokens=num_vis_tokens)
+    return model
 
 
 @ex.automain
 def main(
     seed,
-    lm,
-    vis_path,
-    emb_key,
-    exp_name,
+    lm_mode,
+    ex_tag,
     log_dir,
     load_path,
     num_gpus,
@@ -30,10 +36,11 @@ def main(
     val_check_interval,
     amp_level,
     test_only,
+    vis_path,
     vis_mode,
     pretrained_vision,
     num_vis_tokens,
-    loss_names,
+    checkpoint_dirpath,
     _config
 ):
     if num_nodes > 1:
@@ -44,50 +51,23 @@ def main(
         gpus = num_gpus
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
     print(_config)
+    config_clone = copy.deepcopy(_config)
+    config_clone['tokenizer'] = LM_MODE_DICT[lm_mode]['lm']
+    if 'pad_token' in LM_MODE_DICT[lm_mode]:
+        config_clone['pad_token'] = LM_MODE_DICT[lm_mode]['pad_token']
     pl.seed_everything(seed)
-    dm = MTDataModule(_config, dist=True)
+    dm = MTDataModule(config_clone, dist=True)
+    path_key = f'{vis_path}_{vis_mode}'
+    if num_vis_tokens is not None:
+        path_key = path_key+'_vh'
+    if pretrained_vision:
+        path_key = path_key+'_ft'
 
-    if 'gpt' in lm:
-        model = GPT2LitFROZEN.from_pretrained(
-            lm,
-            emb_key=emb_key,
-            vis_mode=vis_mode,
-            vis_path=vis_path,
-            num_vis_tokens=num_vis_tokens,
-            pretrained_vision=pretrained_vision
-        )
-    elif 'electra' in lm:
-        model = ElectraMaskedLitFROZEN.from_pretrained(
-            lm,
-            emb_key=emb_key,
-            vis_mode=vis_mode,
-            vis_path=vis_path,
-            num_vis_tokens=num_vis_tokens,
-            pretrained_vision=pretrained_vision
-        )
-    elif 'bert' in lm:
-        if loss_names['itm'] == 1:
-            model = BertLitFROZEN.from_pretrained(
-                lm,
-                emb_key=emb_key,
-                vis_mode=vis_mode,
-                vis_path=vis_path,
-                num_vis_tokens=num_vis_tokens,
-                pretrained_vision=pretrained_vision
-            )
-        else:
-            model = BertMaskedLitFROZEN.from_pretrained(
-                lm,
-                emb_key=emb_key,
-                vis_mode=vis_mode,
-                vis_path=vis_path,
-                num_vis_tokens=num_vis_tokens,
-                pretrained_vision=pretrained_vision
-            )
-    else:
-        raise ValueError
+    model = _get_model(lm_mode, vis_path, vis_mode, num_vis_tokens)
+    file_name = exp_name = f'BiFrost_{path_key}'
+    if ex_tag:
+        exp_name = f'{exp_name}_{ex_tag}'
     model.set_tokenizer(dm.tokenizer)
-    exp_name = f'{exp_name}'
 
     os.makedirs(log_dir, exist_ok=True)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
@@ -96,6 +76,8 @@ def main(
         monitor="val_loss",
         mode="min",
         save_last=True,
+        filename=file_name,
+        dirpath=checkpoint_dirpath
     )
     logger_name = f'{exp_name}_seed{seed}'
     if load_path:
@@ -133,14 +115,6 @@ def main(
         val_check_interval=val_check_interval,
         amp_level=amp_level
     )
-    version_path = os.path.join(
-        trainer.logger.save_dir,
-        trainer.logger.name,
-        f'version_{trainer.logger.version}'
-    )
-    os.makedirs(version_path, exist_ok=True)
-    with open(os.path.join(version_path, 'config.json'), 'w') as f:
-        json.dump(copy.deepcopy(_config), f)
     if not test_only:
         trainer.fit(model, datamodule=dm)
     else:

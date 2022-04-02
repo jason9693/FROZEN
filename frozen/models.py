@@ -1,12 +1,9 @@
-import os
-import sys
-
 import torch
 import timm
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForMaskedLM
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForMaskedLM, AutoModelForPreTraining
 import pytorch_lightning as pl
 
-from frozen.vision_heads import wrap_vis_encoder, VisionAttentionHead
+from frozen.vision_heads import wrap_vis_encoder, VisionAttentionHead, LinearPatchEmbed
 
 
 class GPT2LitFROZEN(pl.LightningModule):
@@ -35,10 +32,7 @@ class GPT2LitFROZEN(pl.LightningModule):
     def _generate_zero_shot_embeds(self, vis_embed, tokens, **kwargs):
         input_ids = tokens["input_ids"]
         device = input_ids.device
-        if "Model" in type(self.lm).__name__ and "Head" not in type(self.lm).__name__:
-            nlp_embed = self.lm.wte(input_ids)
-        else:
-            nlp_embed = self.lm.transformer.wte(input_ids)
+        nlp_embed = self.lm.transformer.wte(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
         if self.vis_proj_head is not None:
             vis_embed = self.vis_proj_head(vis_embed, nlp_embed)
@@ -47,10 +41,6 @@ class GPT2LitFROZEN(pl.LightningModule):
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
-
-    # todo
-    def _generate_few_shot_embeds(self, vis_embeds, tokens, **kwargs):
-        pass
 
     @classmethod
     def from_pretrained(
@@ -67,7 +57,10 @@ class GPT2LitFROZEN(pl.LightningModule):
     ):
         lm_config = AutoConfig.from_pretrained(hface_path)
         embed_size = lm_config.to_dict()[emb_key]
-        vis_model = timm.create_model(vis_path, pretrained=pretrained_vision)
+        if vis_path != 'linear':
+            vis_model = timm.create_model(vis_path, pretrained=pretrained_vision)
+        else:
+            vis_model = LinearPatchEmbed()
         wrap_vis_encoder(
             vis_model,
             embed_size,
@@ -118,10 +111,16 @@ class GPT2LitFROZEN(pl.LightningModule):
             if output[-1] == self.tokenizer.eos_token_id or i+1 == max_length:
                 return output[-i-1:-1]
             input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
+            tokens = self.encode(self.decode(input_ids))
             tokens = dict(
-                input_ids=torch.tensor(input_ids).unsqueeze(0).to(self.device),
-                attention_mask=torch.ones_like(input_ids).unsqueeze(0).to(self.device)
+                input_ids=torch.tensor(tokens['input_ids']).unsqueeze(0).to(self.device),
+                attention_mask=torch.tensor(tokens['attention_mask']).unsqueeze(0).to(self.device)
             )
+            # input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
+            # tokens = dict(
+            #     input_ids=input_ids.unsqueeze(0).to(self.device),
+            #     attention_mask=torch.ones_like(input_ids).unsqueeze(0).to(self.device)
+            # )
 
     def training_step(self, train_batch, batch_idx):
         img = train_batch["image"][0]
@@ -134,7 +133,7 @@ class GPT2LitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
-        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_plm_loss', loss)
@@ -152,9 +151,9 @@ class GPT2LitFROZEN(pl.LightningModule):
         loss_fn = torch.nn.CrossEntropyLoss()
         output = self.forward(img, tokens)
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
-        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
-        loss = loss_fn(output.logits.transpose(-1, -2), target)
+        loss = loss_fn(output.logits.transpose(-1, -2), target.to(torch.long))
         self.log('val_loss', loss)
         return loss
 
@@ -201,6 +200,13 @@ class ElectraMaskedLitFROZEN(pl.LightningModule):
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
+
+    def zero_shot_infer(self, img, tokens):
+        assert img.size(0) == 1, 'zero_shot_infer method does not support batch inference.'
+        vis_embed = self.v_encoder(img)
+        output = self._generate_zero_shot_embeds(vis_embed, tokens)
+        output = output.logits[0].argmax(dim=-1)
+        return output[self.num_vis_tokens:]
 
     @classmethod
     def from_pretrained(
@@ -269,7 +275,7 @@ class ElectraMaskedLitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         target = train_batch["text_labels_mlm"]
-        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, target], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_mlm_loss', loss)
@@ -285,7 +291,7 @@ class ElectraMaskedLitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         target = val_batch["text_labels_mlm"]
-        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, target], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
@@ -307,8 +313,6 @@ class BertMaskedLitFROZEN(pl.LightningModule):
         self.lm = nlp_model
         for param in self.lm.parameters():
             param.requires_grad = False
-        for param in self.lm.cls.parameters():
-            param.requires_grad = True
         self.v_encoder = vis_model
         self.vis_mode = vis_mode
         self.vis_proj_head = vis_proj_head
@@ -332,6 +336,13 @@ class BertMaskedLitFROZEN(pl.LightningModule):
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
+
+    def zero_shot_infer(self, img, tokens):
+        assert img.size(0) == 1, 'zero_shot_infer method does not support batch inference.'
+        vis_embed = self.v_encoder(img)
+        output = self._generate_zero_shot_embeds(vis_embed, tokens)
+        output = output.prediction_logits[0].argmax(dim=-1)
+        return output[self.num_vis_tokens:]
 
     @classmethod
     def from_pretrained(
@@ -366,7 +377,7 @@ class BertMaskedLitFROZEN(pl.LightningModule):
             )
         else:
             vis_proj_head = None
-        lm = AutoModelForMaskedLM.from_pretrained(hface_path)
+        lm = AutoModelForPreTraining.from_pretrained(hface_path)
         return cls(vis_model, lm, vis_proj_head, **kwargs)
 
     def configure_optimizers(self):
@@ -381,7 +392,7 @@ class BertMaskedLitFROZEN(pl.LightningModule):
 
     def train_forward(self, img, tokens, loss_fn, target):
         output = self.forward(img, tokens)
-        loss = loss_fn(output.logits.transpose(-1, -2), target.to(torch.long))
+        loss = loss_fn(output.prediction_logits.transpose(-1, -2), target.to(torch.long))
         return loss
 
     def encode(self, text):
@@ -400,7 +411,7 @@ class BertMaskedLitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         target = train_batch["text_labels_mlm"]
-        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, target], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_mlm_loss', loss)
@@ -416,7 +427,7 @@ class BertMaskedLitFROZEN(pl.LightningModule):
             "attention_mask": mask
         }
         target = val_batch["text_labels_mlm"]
-        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(img.size(0), self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, target], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
@@ -464,6 +475,20 @@ class BertLitFROZEN(pl.LightningModule):
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
 
+    def zero_shot_infer(self, img, tokens, max_length):
+        assert img.size(0) == 1, 'zero_shot_infer method does not support batch inference.'
+        vis_embed = self.v_encoder(img)
+        for i in range(max_length):
+            output = self._generate_zero_shot_embeds(vis_embed, tokens)
+            output = output.logits[0].argmax(dim=-1)
+            if output[-1] == self.tokenizer.sep_token_id or i+1 == max_length:
+                return output[-i-1:-1]
+            input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
+            tokens = dict(
+                input_ids=torch.tensor(input_ids).unsqueeze(0).to(self.device),
+                attention_mask=torch.ones_like(input_ids).unsqueeze(0).to(self.device)
+            )
+
     @classmethod
     def from_pretrained(
         cls,
@@ -497,7 +522,7 @@ class BertLitFROZEN(pl.LightningModule):
             )
         else:
             vis_proj_head = None
-        lm = AutoModelForMaskedLM.from_pretrained(hface_path)
+        lm = AutoModelForCausalLM.from_pretrained(hface_path)
         return cls(vis_model, lm, vis_proj_head, **kwargs)
 
     def configure_optimizers(self):
@@ -531,7 +556,7 @@ class BertLitFROZEN(pl.LightningModule):
             "input_ids": tokens,
             "attention_mask": mask
         }
-        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, tokens["input_ids"]], -1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_plm_loss', loss)
@@ -547,7 +572,7 @@ class BertLitFROZEN(pl.LightningModule):
         }
         b_size = img.size()[0]
         loss_fn = torch.nn.CrossEntropyLoss()
-        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*self.tokenizer.pad_token_id
+        img_pad_tensor = torch.ones(b_size, self.num_vis_tokens).to(img.device)*(-100)
         target = torch.cat([img_pad_tensor, tokens["input_ids"]], -1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)

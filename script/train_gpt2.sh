@@ -1,0 +1,6 @@
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=32 vis_mode="duel" pretrained_vision=True log_dir=/project/result/frozen_gpt2 $@ --force
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=32 vis_mode="local" pretrained_vision=True log_dir=/project/result/frozen_gpt2 $@ --force
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=32 vis_mode="global" pretrained_vision=True log_dir=/project/result/frozen_gpt2 $@ --force
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=16 vis_mode="duel" pretrained_vision=False log_dir=/project/result/frozen_gpt2 $@ --force
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=16 vis_mode="local" pretrained_vision=False log_dir=/project/result/frozen_gpt2 $@ --force
+python train.py with data_root=./dataset/coco/arrows num_gpus=8 num_nodes=1 task_finetune_gpt2 per_gpu_batchsize=16 vis_mode="global" pretrained_vision=False log_dir=/project/result/frozen_gpt2 $@ --force

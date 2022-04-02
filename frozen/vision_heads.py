@@ -1,5 +1,6 @@
 import torch
 from einops import rearrange
+from einops.layers.torch import Rearrange
 from torch import nn
 
 
@@ -45,7 +46,7 @@ class DuelEmbeddingHead(nn.Module):
 class InteractiveAttention(nn.Module):
     def __init__(self, dim, num_input_tokens, num_heads=8, qkv_bias=False, num_output_tokens=None):
         super().__init__()
-        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        assert dim%num_heads == 0, 'dim should be divisible by num_heads'
         self.dim = dim
         self.num_input_tokens = num_input_tokens
         self.num_heads = num_heads
@@ -134,6 +135,11 @@ ENCODER_FACTORY = dict(
         attr_keys=['global_pool', 'fc'],
         freeze_func=None,
         feat_dim=2048
+    ),
+    linear=dict(
+        attr_keys='head',
+        freeze_func=None,
+        feat_dim=384
     )
 )
 HEAD_FACTORY = {
@@ -169,3 +175,17 @@ def wrap_vis_encoder(
     model.num_tokens = head_module.num_tokens
     if freeze_model:
         ENCODER_FACTORY[encoder_name]['freeze_func'](model, verbose=False)
+
+
+class LinearPatchEmbed(nn.Module):
+    def __init__(self, dim=384, patch_size=16):
+        super().__init__()
+        self.to_patch_embed = nn.Sequential(
+            Rearrange('b d (h p1) (w p2) -> b h w (p1 p2 d)', p1=patch_size, p2=patch_size),
+            nn.Linear(patch_size*patch_size*3, dim),
+            Rearrange('b h w d -> b d h w'),
+        )
+        self.head = nn.Identity()
+
+    def forward(self, x):
+        return self.head(self.to_patch_embed(x))
