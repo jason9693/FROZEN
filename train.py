@@ -1,6 +1,5 @@
 import copy
 import os
-import time
 
 import pytorch_lightning as pl
 
@@ -53,7 +52,6 @@ def main(
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
     print(_config)
     config_clone = copy.deepcopy(_config)
-    config_clone['tokenizer'] = hface_path
     pl.seed_everything(seed)
     dm = MTDataModule(config_clone, dist=True)
     path_key = f'{lm_mode}_{vis_path}_{vis_mode}'
@@ -62,13 +60,8 @@ def main(
     if pretrained_vision:
         path_key = path_key+'_ft'
     model = _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, num_vis_tokens)
-    model.hparams.lm_mode = lm_mode
-    model.hparams.pad_token = config_clone.get('pad_token')
-    model.hparams.hface_path = hface_path
-    model.hparams.emb_key = emb_key
-    model.hparams.vis_path = vis_path
-    model.hparams.vis_mode = vis_mode
-    model.hparams.num_vis_tokens = num_vis_tokens
+    for k, v in config_clone.items():
+        model.hparams[k] = v
     file_name = exp_name = f'BiFrost_{path_key}'
     if ex_tag:
         exp_name = f'{exp_name}_{ex_tag}'

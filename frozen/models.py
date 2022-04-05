@@ -17,10 +17,13 @@ def from_pretrained(
     num_global_tokens=2,
     local_output_size=4,
     num_vis_tokens=None,
+    config_dict=None,
     **kwargs
 ):
     lm_config = AutoConfig.from_pretrained(hface_path)
-    embed_size = lm_config.to_dict()[emb_key]
+    if config_dict is not None:
+        lm_config.update(config_dict)
+    embed_size = getattr(lm_config, emb_key)
     if vis_path == 'linear':
         vis_model = LinearPatchEmbed()
     elif vis_path == 'conv':
@@ -44,7 +47,7 @@ def from_pretrained(
         )
     else:
         vis_proj_head = None
-    lm = base_lm_class.from_pretrained(hface_path)
+    lm = base_lm_class.from_pretrained(hface_path, config=lm_config)
     return cls(vis_model, lm, vis_proj_head, vis_mode, **kwargs)
 
 
@@ -60,16 +63,16 @@ class BiFrostBase(pl.LightningModule):
         self.lm = nlp_model
         for param in self.lm.parameters():
             param.requires_grad = False
-        self.v_encoder = vis_model
+        self.vis_model = vis_model
         self.vis_mode = vis_mode
         self.vis_proj_head = vis_proj_head
         if vis_proj_head is not None:
             self.num_vis_tokens = vis_proj_head.num_output_tokens
         else:
-            self.num_vis_tokens = self.v_encoder.num_tokens
+            self.num_vis_tokens = self.vis_model.num_tokens
 
     def forward(self, img, tokens, **kwargs):
-        return self._compute_output(self.v_encoder(img), tokens, **kwargs)
+        return self.compute_output(self.vis_model(img), tokens, **kwargs)
 
     def train_forward(self, img, tokens, loss_fn, target):
         output = self.forward(img, tokens)
@@ -95,7 +98,7 @@ class BiFrostBase(pl.LightningModule):
     def _get_text_embeddings(self, input_ids):
         raise NotImplementedError()
 
-    def _compute_output(self, vis_embed, tokens, **kwargs):
+    def compute_output(self, vis_embed, tokens, **kwargs):
         input_ids = tokens["input_ids"]
         device = input_ids.device
         nlp_embed = self._get_text_embeddings(input_ids)
@@ -109,10 +112,10 @@ class BiFrostBase(pl.LightningModule):
         return lm_output
 
     @classmethod
-    def from_bifrost_checkpoint(cls, checkpoint_path):
+    def from_bifrost_checkpoint(cls, checkpoint_path, config_dict=None):
         checkpoint = torch.load(checkpoint_path)
         state_dict = checkpoint['state_dict']
-        config = checkpoint['hparams']
+        config = checkpoint['hyper_parameters']
         hface_path = config['hface_path']
         vis_path = config['vis_path']
         vis_mode = config['vis_mode']
@@ -120,8 +123,7 @@ class BiFrostBase(pl.LightningModule):
         num_global_tokens = config.get('num_global_tokens', 2)
         local_output_size = config.get('local_output_size', 4)
         num_vis_tokens = config['num_vis_tokens']
-        model = cls.from_pretrained(
-            cls,
+        model = MODEL_FACTORY[config['lm_mode']].from_pretrained(
             hface_path,
             vis_path,
             False,
@@ -129,7 +131,8 @@ class BiFrostBase(pl.LightningModule):
             vis_mode,
             num_global_tokens,
             local_output_size,
-            num_vis_tokens
+            num_vis_tokens,
+            config_dict
         )
         model.load_state_dict(state_dict)
         return model, config
@@ -176,6 +179,24 @@ class BiFrostCausalLM(BiFrostBase):
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
 
+    def infer(self, img, tokens, max_length):
+        assert img.size(0) == 1, 'infer method does not support batch inference.'
+        vis_embed = self.vis_model(img)
+        result = None
+        for i in range(max_length):
+            output = self.compute_output(vis_embed, tokens)
+            attentions = output.attentions
+            output = output.logits[0].argmax(dim=-1)
+            result = (output[-i-1:-1], attentions)
+            if output[-1] == self.tokenizer.eos_token_id:
+                return result
+            input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
+            tokens = dict(
+                input_ids=input_ids.unsqueeze(0).to(self.device),
+                attention_mask=torch.ones_like(input_ids).unsqueeze(0).to(self.device)
+            )
+        return result
+
 
 class BiFrostMaskedLM(BiFrostBase):
     INFERENCE_METHOD = 'mlm'
@@ -216,6 +237,14 @@ class BiFrostMaskedLM(BiFrostBase):
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
 
+    def infer(self, img, tokens):
+        assert img.size(0) == 1, 'infer method does not support batch inference.'
+        vis_embed = self.vis_model(img)
+        output = self.compute_output(vis_embed, tokens)
+        attentions = output.attentions
+        output = output.logits[0].argmax(dim=-1)
+        return output[self.num_vis_tokens:], attentions
+
 
 class BiFrostGPT2CausalLM(BiFrostCausalLM):
     def _get_text_embeddings(self, input_ids):
@@ -232,6 +261,7 @@ class BiFrostGPT2CausalLM(BiFrostCausalLM):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        config_dict=None,
         **kwargs
     ):
         return from_pretrained(
@@ -245,6 +275,7 @@ class BiFrostGPT2CausalLM(BiFrostCausalLM):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            config_dict,
             **kwargs
         )
 
@@ -277,6 +308,7 @@ class BiFrostElectraMaskedLM(BiFrostBase):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        config_dict=None,
         **kwargs
     ):
         return from_pretrained(
@@ -290,11 +322,20 @@ class BiFrostElectraMaskedLM(BiFrostBase):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            config_dict,
             **kwargs
         )
 
 
 class BiFrostBertMaskedLM(BiFrostMaskedLM):
+    def _get_text_embeddings(self, input_ids):
+        return self.lm.bert.embeddings.word_embeddings(input_ids)
+
+    def train_forward(self, img, tokens, loss_fn, target):
+        output = self.forward(img, tokens)
+        loss = loss_fn(output.prediction_logits.transpose(-1, -2), target.to(torch.long))
+        return loss
+
     @classmethod
     def from_pretrained(
         cls,
@@ -306,6 +347,7 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        config_dict=None,
         **kwargs
     ):
         return from_pretrained(
@@ -319,8 +361,17 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            config_dict,
             **kwargs
         )
+
+    def infer(self, img, tokens):
+        assert img.size(0) == 1, 'infer method does not support batch inference.'
+        vis_embed = self.vis_model(img)
+        output = self.compute_output(vis_embed, tokens)
+        attentions = output.attentions
+        output = output.prediction_logits[0].argmax(dim=-1)
+        return output[self.num_vis_tokens:], attentions
 
 
 MODEL_FACTORY = {

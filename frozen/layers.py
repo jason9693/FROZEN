@@ -1,7 +1,7 @@
 import math
 
 import torch
-from transformers.models.bert.modeling_bert import BertSelfAttention, BertAttention
+from transformers.models.bert.modeling_bert import BertSelfAttention
 
 
 class UniDirectionalBertSelfAttention(BertSelfAttention):
