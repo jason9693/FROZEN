@@ -105,7 +105,7 @@ class BiFrostBase(pl.LightningModule):
         nlp_embed = self._get_text_embeddings(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
         vis_embed = self.vis_proj_head(vis_embed)
-        inputs["inputs_embeds"] = torch.cat([vis_embed, nlp_embed], 1)
+        inputs["inputs_embeds"] = torch.cat([nlp_embed[:, :1], vis_embed, nlp_embed[:, 1:]], 1)
         inputs["attention_mask"] = torch.cat(
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
         lm_output = self.lm(**inputs, **kwargs)
@@ -371,7 +371,7 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
         output = self.compute_output(vis_embed, tokens)
         attentions = output.attentions
         output = output.prediction_logits[0].argmax(dim=-1)
-        return output[self.num_vis_tokens:], attentions
+        return output[self.num_vis_tokens+1:], attentions
 
 
 MODEL_FACTORY = {
