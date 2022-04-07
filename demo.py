@@ -20,7 +20,9 @@ PYTHON_PATH = os.path.abspath('./')
 
 
 def get_all_checkpoint_paths(root_dir=os.path.join(PYTHON_PATH, 'BiFrost'), path_format='BiFrost*.ckpt'):
-    return list(glob.glob(os.path.join(root_dir, path_format)))
+    paths = list(glob.glob(os.path.join(root_dir, path_format)))
+    paths.sort()
+    return paths
 
 
 def convert_to_inputs(img_input, image_size):
@@ -49,11 +51,11 @@ def visualize_attentions(
         if vis_mode == 'duel':
             start_idx = num_global_tokens
             end_idx = h*w+num_global_tokens
-            num_vis_tokens = num_global_tokens+h*w
+            # num_vis_tokens = num_global_tokens+h*w
         elif vis_mode == 'local':
             start_idx = 0
             end_idx = h*w
-            num_vis_tokens = h*w
+            # num_vis_tokens = h*w
         else:
             return
         is_sum_all_layers = st.checkbox('Sum all layers')
@@ -74,12 +76,13 @@ def visualize_attentions(
             attn = attn[head_idx]
         else:
             attn = attn.sum(dim=0)
-        attn = attn[num_vis_tokens:, start_idx:end_idx]
+        attn = attn[:, start_idx:end_idx]
         attn = rearrange(attn, 'n (h w) -> n h w', h=h, w=w)
+        words = ['[VIS]' for _ in range(attn.size(0)-len(input_tokens))]+input_tokens
         word_idx = st.select_slider(
             'Select a word to show attention.',
-            options=list(range(len(input_tokens))),
-            format_func=lambda idx: input_tokens[idx]
+            options=list(range(len(words))),
+            format_func=lambda idx: words[idx]
         )
         heatmap = attn[word_idx]
         # heatmap = (heatmap-heatmap.mean())/heatmap.std()
@@ -104,15 +107,18 @@ def infer_and_export(
     max_length,
     masking_rate,
     config,
+    ignore_eos_token,
     info=None
 ):
     if model.INFERENCE_METHOD == 'plm':
-        plm_infer_and_export(model, image_tensor, image, input_text, is_question, max_length, config, info)
+        plm_infer_and_export(
+            model, image_tensor, image, input_text, is_question, max_length, config, ignore_eos_token, info)
     else:
         mlm_infer_and_export(model, image_tensor, image, input_text, use_random_masking, masking_rate, config, info)
 
 
-def plm_infer_and_export(model, image_tensor, image, input_text, is_question, max_length, config, info=None):
+def plm_infer_and_export(model, image_tensor, image, input_text, is_question, max_length, config,
+                         ignore_eos_token, info=None):
     if image is not None:
         with st.spinner('The model is thinking...'):
             s = time.time()
@@ -128,9 +134,9 @@ def plm_infer_and_export(model, image_tensor, image, input_text, is_question, ma
                 input_ids=torch.tensor(input_ids).unsqueeze(0).to(model.device),
                 attention_mask=torch.tensor(tokens['attention_mask']).unsqueeze(0).to(model.device)
             )
-            output, attentions = model.infer(image_tensor.cuda(), tokens, max_length)
+            output, attentions = model.infer(image_tensor.cuda(), tokens, max_length, ignore_eos_token)
             output_ids = output
-            output = model.decode(output)
+            output = model.decode(output).replace('<|endoftext|>', ' ')
             output_ids = output_ids.squeeze().data.cpu().numpy().tolist()
             e = time.time()
             elapsed_time = e-s
@@ -142,7 +148,7 @@ def plm_infer_and_export(model, image_tensor, image, input_text, is_question, ma
             inferred_tokens = input_tokens+output_tokens[:-1]
         else:
             inferred_tokens = input_tokens
-        if config['vis_mode'] in ('duel', 'local'):
+        if config['vis_mode'] in ('duel', 'local') and config['num_vis_tokens'] is None:
             visualize_attentions(
                 image,
                 config['vis_mode'],
@@ -196,7 +202,7 @@ def mlm_infer_and_export(model, image_tensor, image, input_text, use_random_mask
         st.caption(f'Input Text: {input_text}')
         st.write(f'Answer: {output}')
         input_tokens = model.tokenizer.convert_ids_to_tokens(input_ids)[1:-1]
-        if config['vis_mode'] in ('duel', 'local'):
+        if config['vis_mode'] in ('duel', 'local') and config['num_vis_tokens'] is None:
             visualize_attentions(
                 image,
                 config['vis_mode'],
@@ -262,9 +268,11 @@ def main():
             st.experimental_rerun()
         if model.INFERENCE_METHOD == 'plm':
             max_length = st.sidebar.select_slider('Set the maximum length of output sentence.', list(range(10, 31)))
+            ignore_eos_token = st.sidebar.checkbox('Ignore EOS token')
             masking_rate = None
         else:
             max_length = None
+            ignore_eos_token = True
             masking_rate = st.sidebar.select_slider(
                 'Set the percentages of masked tokens.', list(np.linspace(0., 0.5, num=50)))
         example_dir = os.path.join(os.getcwd(), 'examples')
@@ -307,6 +315,7 @@ def main():
                     max_length,
                     masking_rate,
                     config,
+                    ignore_eos_token,
                     info
                 )
                 add_to_examples = st.button('Add to Examples')
@@ -353,6 +362,7 @@ def main():
                 max_length,
                 masking_rate,
                 config,
+                ignore_eos_token,
                 info
             )
             resubmit = st.sidebar.button('Resubmit')

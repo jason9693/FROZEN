@@ -1,5 +1,6 @@
 import torch
 import timm
+from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForMaskedLM, AutoModelForPreTraining
 import pytorch_lightning as pl
 
@@ -39,11 +40,11 @@ def from_pretrained(
         vis_mode,
         pretrained_vision
     )
-    if num_vis_tokens is not None:
+    if 'vis_mode' != 'global' and num_vis_tokens is not None:
         vis_proj_head = VisionAttentionHead(
             dim=embed_size,
             num_input_tokens=vis_model.num_tokens,
-            num_output_tokens=num_vis_tokens
+            num_output_tokens=num_vis_tokens,
         )
     else:
         vis_proj_head = None
@@ -65,7 +66,7 @@ class BiFrostBase(pl.LightningModule):
             param.requires_grad = False
         self.vis_model = vis_model
         self.vis_mode = vis_mode
-        self.vis_proj_head = vis_proj_head
+        self.vis_proj_head = vis_proj_head or nn.Identity()
         if vis_proj_head is not None:
             self.num_vis_tokens = vis_proj_head.num_output_tokens
         else:
@@ -103,8 +104,7 @@ class BiFrostBase(pl.LightningModule):
         device = input_ids.device
         nlp_embed = self._get_text_embeddings(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
-        if self.vis_proj_head is not None:
-            vis_embed = self.vis_proj_head(vis_embed, nlp_embed)
+        vis_embed = self.vis_proj_head(vis_embed)
         inputs["inputs_embeds"] = torch.cat([vis_embed, nlp_embed], 1)
         inputs["attention_mask"] = torch.cat(
             [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
@@ -179,7 +179,7 @@ class BiFrostCausalLM(BiFrostBase):
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
 
-    def infer(self, img, tokens, max_length):
+    def infer(self, img, tokens, max_length, ignore_eos_token_id=True):
         assert img.size(0) == 1, 'infer method does not support batch inference.'
         vis_embed = self.vis_model(img)
         result = None
@@ -188,7 +188,7 @@ class BiFrostCausalLM(BiFrostBase):
             attentions = output.attentions
             output = output.logits[0].argmax(dim=-1)
             result = (output[-i-1:-1], attentions)
-            if output[-1] == self.tokenizer.eos_token_id:
+            if output[-1] == self.tokenizer.eos_token_id and not ignore_eos_token_id:
                 return result
             input_ids = torch.cat((tokens['input_ids'][0], output[-1:]), dim=0)
             tokens = dict(
@@ -213,7 +213,7 @@ class BiFrostMaskedLM(BiFrostBase):
         }
         target = train_batch["text_labels_mlm"]
         img_pad_tensor = -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
-        target = torch.cat([img_pad_tensor, target], dim=-1)
+        target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_mlm_loss', loss)
         return loss
@@ -229,7 +229,7 @@ class BiFrostMaskedLM(BiFrostBase):
         }
         target = val_batch["text_labels_mlm"]
         img_pad_tensor = -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
-        target = torch.cat([img_pad_tensor, target], dim=-1)
+        target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
         return loss
@@ -243,7 +243,7 @@ class BiFrostMaskedLM(BiFrostBase):
         output = self.compute_output(vis_embed, tokens)
         attentions = output.attentions
         output = output.logits[0].argmax(dim=-1)
-        return output[self.num_vis_tokens:], attentions
+        return output[self.num_vis_tokens+1:], attentions
 
 
 class BiFrostGPT2CausalLM(BiFrostCausalLM):
