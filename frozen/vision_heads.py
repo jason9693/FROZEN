@@ -49,7 +49,7 @@ class CrossAttention(nn.Module):
     def forward(self, vis_embed, nlp_embed):
         embed = torch.cat([vis_embed, nlp_embed], dim=1)
         b, n, d = embed.shape
-        q = self.q(nlp_embed).reshape(b, n, 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        q = self.q(nlp_embed).reshape(b, nlp_embed.size(1), 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
         kv = self.kv(embed).reshape(b, n, 2, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
         k, v = kv.unbind(0)
 
@@ -57,7 +57,7 @@ class CrossAttention(nn.Module):
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        embed = (attn @ v).transpose(1, 2).reshape(b, n, d)
+        embed = (attn @ v).transpose(1, 2).reshape(b, nlp_embed.size(1), d)
         embed = self.proj(embed)
         embed = self.proj_drop(embed)
         return embed
@@ -173,7 +173,7 @@ class DeepFusion(nn.Module):
         res = output = torch.cat([vis_embed, nlp_embed], dim=1)
         output = self.norm0(output)
         idx = vis_embed.size(1)
-        res = output = res[:, idx:]+self.attn(output, output[:, idx:])
+        res = output = res[:, idx:]+self.attn(output[:idx], output[:, idx:])
         output = self.norm1(output)
         output = res+self.mlp(output)
         return output
@@ -190,6 +190,9 @@ class ConcatHead(nn.Module):
         device = output.device
         attn_mask = torch.cat([torch.ones(*vis_embed.size()[:2]).to(device), attn_mask], 1)
         return output, attn_mask
+
+    def get_vis_label(self, img):
+        return -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
 
 
 class VisionAttentionHead(nn.Module):
@@ -215,7 +218,7 @@ class VisionAttentionHead(nn.Module):
                 num_heads,
                 qkv_bias,
                 num_input_tokens,
-                num_vis_tokens if i == num_attentions-1 else None
+                num_vis_tokens if i == num_attentions-1 else num_input_tokens
             )
             for i in range(num_attentions)
         ])
@@ -227,6 +230,9 @@ class VisionAttentionHead(nn.Module):
         device = output.device
         attn_mask = torch.cat([torch.ones(*output.size()[:2]).to(device), attn_mask], 1)
         return torch.cat([output, nlp_embed], dim=1), attn_mask
+
+    def get_vis_label(self, img):
+        return -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
 
 
 class DeepFusionHead(nn.Module):
@@ -249,9 +255,9 @@ class DeepFusionHead(nn.Module):
         attn = []
         for i in range(num_attentions):
             if i == num_attentions-1:
-                attn_module = InteractionModule(dim, num_heads, qkv_bias)
-            else:
                 attn_module = DeepFusion(dim, num_heads, qkv_bias)
+            else:
+                attn_module = InteractionModule(dim, None, None, num_heads, qkv_bias)
             attn.append(attn_module)
         self.attn = nn.ModuleList(attn)
 
@@ -261,6 +267,9 @@ class DeepFusionHead(nn.Module):
             output = attn(output)
         output = self.attn[-1](output, nlp_embed)
         return output, attn_mask
+
+    def get_vis_label(self, img):
+        return
 
 
 def freeze(module, verbose=False):

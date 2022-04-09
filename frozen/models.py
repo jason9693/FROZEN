@@ -148,8 +148,11 @@ class BiFrostCausalLM(BiFrostBase):
             "attention_mask": mask
         }
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
-        img_pad_tensor = -100*torch.ones(b_size, self.num_vis_tokens).to(img.device)
-        target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
+        target = tokens["input_ids"]
+        img_pad_tensor = self.interactive_head.get_vis_label(img)
+        if img_pad_tensor is not None:
+            target = torch.cat([img_pad_tensor, target], dim=-1)
+        target = torch.cat([target, eos_tensor], dim=-1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_plm_loss', loss)
         return loss
@@ -165,8 +168,11 @@ class BiFrostCausalLM(BiFrostBase):
         b_size = img.size()[0]
         loss_fn = torch.nn.CrossEntropyLoss()
         eos_tensor = torch.ones(b_size, 1).to(img.device)*self.tokenizer.eos_token_id
-        img_pad_tensor = -100*torch.ones(b_size, self.num_vis_tokens).to(img.device)
-        target = torch.cat([img_pad_tensor, tokens["input_ids"], eos_tensor], -1)[:, 1:]
+        target = tokens["input_ids"]
+        img_pad_tensor = self.interactive_head.get_vis_label(img)
+        if img_pad_tensor is not None:
+            target = torch.cat([img_pad_tensor, target, eos_tensor], dim=-1)
+        target = torch.cat([target, eos_tensor], dim=-1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
         return loss
@@ -217,8 +223,9 @@ class BiFrostMaskedLM(BiFrostBase):
             "attention_mask": mask
         }
         target = train_batch["text_labels_mlm"]
-        img_pad_tensor = -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
-        target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
+        img_pad_tensor = self.interactive_head.get_vis_label(img)
+        if img_pad_tensor is not None:
+            target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('train_mlm_loss', loss)
         return loss
@@ -233,8 +240,9 @@ class BiFrostMaskedLM(BiFrostBase):
             "attention_mask": mask
         }
         target = val_batch["text_labels_mlm"]
-        img_pad_tensor = -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
-        target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
+        img_pad_tensor = self.interactive_head.get_vis_label(img)
+        if img_pad_tensor is not None:
+            target = torch.cat([target[:, :1], img_pad_tensor, target[:, 1:]], dim=-1)
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
         return loss
