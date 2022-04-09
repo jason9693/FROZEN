@@ -174,7 +174,7 @@ class BiFrostCausalLM(BiFrostBase):
         target = tokens["input_ids"]
         img_pad_tensor = self.interactive_head.get_vis_label(img)
         if img_pad_tensor is not None:
-            target = torch.cat([img_pad_tensor, target, eos_tensor], dim=-1)
+            target = torch.cat([img_pad_tensor, target], dim=-1)
         target = torch.cat([target, eos_tensor], dim=-1)[:, 1:]
         loss = self.train_forward(img, tokens, loss_fn, target)
         self.log('val_loss', loss)
