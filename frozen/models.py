@@ -1,6 +1,5 @@
 import torch
 import timm
-from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForMaskedLM, AutoModelForPreTraining
 import pytorch_lightning as pl
 
