@@ -80,6 +80,7 @@ def config():
 
     vis_mode = "global"
     vis_path = "nf_resnet50"
+    interactive_head = "concat"
     pretrained_vision = False
     num_vis_tokens = None
     checkpoint_dirpath = '/nas/po.ai'

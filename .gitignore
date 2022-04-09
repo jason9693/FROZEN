@@ -8,3 +8,4 @@ core.*
 result/*
 .vscode/
 *.pyc
+.DS_Store

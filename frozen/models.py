@@ -4,7 +4,7 @@ from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForMaskedLM, AutoModelForPreTraining
 import pytorch_lightning as pl
 
-from frozen.vision_heads import wrap_vis_encoder, VisionAttentionHead, LinearPatchEmbed, Stem
+from frozen.vision_heads import wrap_vis_encoder, LinearPatchEmbed, Stem, VISION_HEAD_FACTORY
 
 
 def from_pretrained(
@@ -18,6 +18,7 @@ def from_pretrained(
     num_global_tokens=2,
     local_output_size=4,
     num_vis_tokens=None,
+    interactive_head='concat',
     config_dict=None,
     **kwargs
 ):
@@ -40,16 +41,13 @@ def from_pretrained(
         vis_mode,
         pretrained_vision
     )
-    if 'vis_mode' != 'global' and num_vis_tokens is not None:
-        vis_proj_head = VisionAttentionHead(
-            dim=embed_size,
-            num_input_tokens=vis_model.num_tokens,
-            num_output_tokens=num_vis_tokens,
-        )
-    else:
-        vis_proj_head = None
+    interactive_head_module = VISION_HEAD_FACTORY[interactive_head](
+        dim=embed_size,
+        num_input_tokens=vis_model.num_tokens,
+        num_vis_tokens=num_vis_tokens,
+    )
     lm = base_lm_class.from_pretrained(hface_path, config=lm_config)
-    return cls(vis_model, lm, vis_proj_head, vis_mode, **kwargs)
+    return cls(vis_model, lm, interactive_head_module, vis_mode, **kwargs)
 
 
 class BiFrostBase(pl.LightningModule):
@@ -57,7 +55,7 @@ class BiFrostBase(pl.LightningModule):
         self,
         vis_model,
         nlp_model,
-        vis_proj_head=None,
+        interactive_head,
         vis_mode='global'
     ):
         super().__init__()
@@ -66,11 +64,8 @@ class BiFrostBase(pl.LightningModule):
             param.requires_grad = False
         self.vis_model = vis_model
         self.vis_mode = vis_mode
-        self.vis_proj_head = vis_proj_head or nn.Identity()
-        if vis_proj_head is not None:
-            self.num_vis_tokens = vis_proj_head.num_output_tokens
-        else:
-            self.num_vis_tokens = self.vis_model.num_tokens
+        self.interactive_head = interactive_head
+        self.num_vis_tokens = interactive_head.num_vis_tokens
 
     def forward(self, img, tokens, **kwargs):
         return self.compute_output(self.vis_model(img), tokens, **kwargs)
@@ -101,13 +96,11 @@ class BiFrostBase(pl.LightningModule):
 
     def compute_output(self, vis_embed, tokens, **kwargs):
         input_ids = tokens["input_ids"]
-        device = input_ids.device
         nlp_embed = self._get_text_embeddings(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
-        vis_embed = self.vis_proj_head(vis_embed)
-        inputs["inputs_embeds"] = torch.cat([nlp_embed[:, :1], vis_embed, nlp_embed[:, 1:]], 1)
-        inputs["attention_mask"] = torch.cat(
-            [torch.ones(*vis_embed.size()[:2]).to(device), tokens["attention_mask"]], 1)
+        embed, attn_mask = self.interactive_head(vis_embed, nlp_embed, tokens['attention_mask'])
+        inputs["inputs_embeds"] = embed
+        inputs["attention_mask"] = attn_mask
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
 
@@ -119,6 +112,7 @@ class BiFrostBase(pl.LightningModule):
         hface_path = config['hface_path']
         vis_path = config['vis_path']
         vis_mode = config['vis_mode']
+        interactive_head = config['interactive_head']
         emb_key = config['emb_key']
         num_global_tokens = config.get('num_global_tokens', 2)
         local_output_size = config.get('local_output_size', 4)
@@ -132,6 +126,7 @@ class BiFrostBase(pl.LightningModule):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            interactive_head,
             config_dict
         )
         model.load_state_dict(state_dict)
@@ -202,6 +197,16 @@ class BiFrostMaskedLM(BiFrostBase):
     INFERENCE_METHOD = 'mlm'
     LANGUAGE_MODEL = 'Masked Language Modeling'
 
+    def compute_output(self, vis_embed, tokens, **kwargs):
+        input_ids = tokens["input_ids"]
+        nlp_embed = self._get_text_embeddings(input_ids)
+        inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
+        embed, attn_mask = self.interactive_head(vis_embed, nlp_embed, tokens['attention_mask'])
+        inputs["inputs_embeds"] = embed
+        inputs["attention_mask"] = attn_mask
+        lm_output = self.lm(**inputs, **kwargs)
+        return lm_output
+
     def training_step(self, train_batch, batch_idx):
         img = train_batch["image"][0]
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -243,7 +248,7 @@ class BiFrostMaskedLM(BiFrostBase):
         output = self.compute_output(vis_embed, tokens)
         attentions = output.attentions
         output = output.logits[0].argmax(dim=-1)
-        return output[self.num_vis_tokens+1:], attentions
+        return output[self.num_vis_tokens:], attentions
 
 
 class BiFrostGPT2CausalLM(BiFrostCausalLM):
@@ -261,6 +266,7 @@ class BiFrostGPT2CausalLM(BiFrostCausalLM):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        interactive_head='concat',
         config_dict=None,
         **kwargs
     ):
@@ -275,6 +281,7 @@ class BiFrostGPT2CausalLM(BiFrostCausalLM):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            interactive_head,
             config_dict,
             **kwargs
         )
@@ -285,10 +292,10 @@ class BiFrostElectraMaskedLM(BiFrostBase):
         self,
         vis_model,
         nlp_model,
-        vis_proj_head=None,
+        interactive_head=None,
         vis_mode='global'
     ):
-        super().__init__(vis_model, nlp_model, vis_proj_head, vis_mode)
+        super().__init__(vis_model, nlp_model, interactive_head, vis_mode)
         for param in self.lm.generator_predictions.parameters():
             param.requires_grad = True
         for param in self.lm.generator_lm_head.parameters():
@@ -308,6 +315,7 @@ class BiFrostElectraMaskedLM(BiFrostBase):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        interactive_head='concat',
         config_dict=None,
         **kwargs
     ):
@@ -322,6 +330,7 @@ class BiFrostElectraMaskedLM(BiFrostBase):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            interactive_head,
             config_dict,
             **kwargs
         )
@@ -347,6 +356,7 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
         num_global_tokens=2,
         local_output_size=4,
         num_vis_tokens=None,
+        interactive_head='concat',
         config_dict=None,
         **kwargs
     ):
@@ -361,6 +371,7 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
             num_global_tokens,
             local_output_size,
             num_vis_tokens,
+            interactive_head,
             config_dict,
             **kwargs
         )
@@ -371,7 +382,7 @@ class BiFrostBertMaskedLM(BiFrostMaskedLM):
         output = self.compute_output(vis_embed, tokens)
         attentions = output.attentions
         output = output.prediction_logits[0].argmax(dim=-1)
-        return output[self.num_vis_tokens+1:], attentions
+        return output[self.num_vis_tokens:], attentions
 
 
 MODEL_FACTORY = {

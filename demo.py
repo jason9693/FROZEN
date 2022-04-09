@@ -376,6 +376,12 @@ def main():
                 with open(examples_path, 'w') as f:
                     json.dump(examples, f)
                 st.experimental_rerun()
+    st.markdown(f'''
+        <style>
+            section[data-testid="stSidebar"] .css-ng1t4o {{width: 30rem;}}
+            section[data-testid="stSidebar"] .css-1d391kg {{width: 30rem;}}
+        </style>
+    ''', unsafe_allow_html=True)
 
 
 if __name__ == '__main__':
