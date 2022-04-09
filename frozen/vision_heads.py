@@ -201,7 +201,7 @@ class VisionAttentionHead(nn.Module):
         dim,
         num_input_tokens,
         num_vis_tokens=None,
-        num_attentions=1,
+        num_attentions=2,
         num_heads=8,
         qkv_bias=False
     ):
@@ -241,7 +241,7 @@ class DeepFusionHead(nn.Module):
         dim,
         num_input_tokens,
         num_vis_tokens=None,
-        num_attentions=1,
+        num_attentions=2,
         num_heads=8,
         qkv_bias=False,
     ):
@@ -316,9 +316,9 @@ HEAD_FACTORY = {
     LocalEmbeddingHead(feat_dim, embed_dim, local_output_size)
 }
 VISION_HEAD_FACTORY = {
-    'interactive': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=1, num_heads=8, qkv_bias=True:
+    'interactive': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=2, num_heads=8, qkv_bias=True:
     VisionAttentionHead(dim, num_input_tokens, num_vis_tokens, num_attentions, num_heads, qkv_bias),
-    'deep-fusion': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=1, num_heads=8, qkv_bias=True:
+    'deep-fusion': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=2, num_heads=8, qkv_bias=True:
     DeepFusionHead(dim, num_input_tokens, num_attentions, num_heads, qkv_bias),
     'concat': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=1, num_heads=8, qkv_bias=True:
     ConcatHead(num_input_tokens)
