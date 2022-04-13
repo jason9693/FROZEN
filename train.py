@@ -9,9 +9,14 @@ from frozen.models import MODEL_FACTORY
 
 PYTHON_PATH = os.path.abspath('./')
 
-def _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, num_vis_tokens):
+def _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, interactive_head, num_vis_tokens):
     model = MODEL_FACTORY[lm_mode].from_pretrained(
-        hface_path, vis_path=vis_path, emb_key=emb_key, vis_mode=vis_mode, num_vis_tokens=num_vis_tokens)
+        hface_path,
+        vis_path=vis_path,
+        emb_key=emb_key,
+        vis_mode=vis_mode,
+        interactive_head=interactive_head,
+        num_vis_tokens=num_vis_tokens)
     return model
 
 
@@ -38,6 +43,7 @@ def main(
     test_only,
     vis_path,
     vis_mode,
+    interactive_head,
     pretrained_vision,
     num_vis_tokens,
     checkpoint_dirpath,
@@ -59,7 +65,7 @@ def main(
         path_key = path_key+'_vh'
     if pretrained_vision:
         path_key = path_key+'_ft'
-    model = _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, num_vis_tokens)
+    model = _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, interactive_head, num_vis_tokens)
     for k, v in config_clone.items():
         model.hparams[k] = v
     file_name = exp_name = f'BiFrost_{path_key}'

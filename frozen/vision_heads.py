@@ -33,6 +33,36 @@ class Attention(nn.Module):
         return x
 
 
+class CrossAttention(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim//num_heads
+        self.scale = head_dim**-0.5
+
+        self.q = nn.Linear(dim, dim, bias=qkv_bias)
+        self.kv = nn.Linear(dim, dim*2, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, vis_embed, nlp_embed):
+        embed = torch.cat([vis_embed, nlp_embed], dim=1)
+        b, n, d = embed.shape
+        q = self.q(nlp_embed).reshape(b, nlp_embed.size(1), 1, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        kv = self.kv(embed).reshape(b, n, 2, self.num_heads, d//self.num_heads).permute(2, 0, 3, 1, 4)
+        k, v = kv.unbind(0)
+
+        attn = (q @ k.transpose(-2, -1))*self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        embed = (attn @ v).transpose(1, 2).reshape(b, nlp_embed.size(1), d)
+        embed = self.proj(embed)
+        embed = self.proj_drop(embed)
+        return embed
+
+
 class GlobalEmbeddingHead(nn.Module):
     def __init__(self, feat_dim, embed_dim, num_global_tokens):
         super().__init__()
@@ -94,24 +124,22 @@ class InteractionModule(nn.Module):
         self,
         dim,
         num_input_tokens,
-        num_attentions=1,
+        num_vis_tokens=None,
         num_heads=8,
         qkv_bias=False,
-        num_output_tokens=None
     ):
         super().__init__()
         self.dim = dim
         self.num_input_tokens = num_input_tokens
-        self.num_attentions = num_attentions
+        self.num_vis_tokens = num_vis_tokens or num_input_tokens
         self.num_heads = num_heads
         self.qkv_bias = qkv_bias
-        self.num_output_tokens = num_output_tokens
         self.norm0 = nn.LayerNorm(dim)
         self.attn = Attention(dim, num_heads, qkv_bias)
         self.norm1 = nn.LayerNorm(dim)
         self.mlp = MultiLayerPerceptron(dim, 4*dim, dim)
-        if num_output_tokens is not None:
-            self.token_proj = nn.Linear(num_input_tokens, num_output_tokens)
+        if num_vis_tokens != num_input_tokens:
+            self.token_proj = nn.Linear(num_input_tokens, num_vis_tokens)
         else:
             self.token_proj = nn.Identity()
 
@@ -125,40 +153,123 @@ class InteractionModule(nn.Module):
         return output
 
 
+class DeepFusion(nn.Module):
+    def __init__(
+        self,
+        dim,
+        num_heads=8,
+        qkv_bias=False
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.qkv_bias = qkv_bias
+        self.norm0 = nn.LayerNorm(dim)
+        self.attn = CrossAttention(dim, num_heads, qkv_bias)
+        self.norm1 = nn.LayerNorm(dim)
+        self.mlp = MultiLayerPerceptron(dim, 4*dim, dim)
+
+    def forward(self, vis_embed, nlp_embed):
+        res = output = torch.cat([vis_embed, nlp_embed], dim=1)
+        output = self.norm0(output)
+        idx = vis_embed.size(1)
+        res = output = res[:, idx:]+self.attn(output[:idx], output[:, idx:])
+        output = self.norm1(output)
+        output = res+self.mlp(output)
+        return output
+
+
+class ConcatHead(nn.Module):
+    def __init__(self, num_input_tokens, num_vis_tokens=None):
+        super().__init__()
+        self.num_input_tokens = num_input_tokens
+        self.num_vis_tokens = num_vis_tokens or num_input_tokens
+
+    def forward(self, vis_embed, nlp_embed, attn_mask):
+        output = torch.cat([vis_embed, nlp_embed], dim=1)
+        device = output.device
+        attn_mask = torch.cat([torch.ones(*vis_embed.size()[:2]).to(device), attn_mask], 1)
+        return output, attn_mask
+
+    def get_vis_label(self, img):
+        return -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
+
+
 class VisionAttentionHead(nn.Module):
     def __init__(
         self,
         dim,
         num_input_tokens,
-        num_attentions=1,
+        num_vis_tokens=None,
+        num_attentions=2,
         num_heads=8,
-        qkv_bias=False,
-        num_output_tokens=None,
+        qkv_bias=False
     ):
         super().__init__()
         self.dim = dim
         self.num_input_tokens = num_input_tokens
+        self.num_vis_tokens = num_vis_tokens or num_input_tokens
         self.num_attentions = num_attentions
         self.num_heads = num_heads
         self.qkv_bias = qkv_bias
-        self.num_output_tokens = num_output_tokens
         self.attn = nn.ModuleList([
             InteractionModule(
                 dim,
-                num_input_tokens,
-                num_attentions,
                 num_heads,
                 qkv_bias,
-                num_output_tokens if i == num_attentions-1 else None
+                num_input_tokens,
+                num_vis_tokens if i == num_attentions-1 else num_input_tokens
             )
             for i in range(num_attentions)
         ])
 
-    def forward(self, vis_embed):
+    def forward(self, vis_embed, nlp_embed, attn_mask):
         output = vis_embed
-        for att in self.attn:
-            output = att(output)
-        return output
+        for attn in self.attn:
+            output = attn(output)
+        device = output.device
+        attn_mask = torch.cat([torch.ones(*output.size()[:2]).to(device), attn_mask], 1)
+        return torch.cat([output, nlp_embed], dim=1), attn_mask
+
+    def get_vis_label(self, img):
+        return -100*torch.ones(img.size(0), self.num_vis_tokens).to(img.device)
+
+
+class DeepFusionHead(nn.Module):
+    def __init__(
+        self,
+        dim,
+        num_input_tokens,
+        num_vis_tokens=None,
+        num_attentions=2,
+        num_heads=8,
+        qkv_bias=False,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_input_tokens = num_input_tokens
+        self.num_vis_tokens = num_vis_tokens or num_input_tokens
+        self.num_attentions = num_attentions
+        self.num_heads = num_heads
+        self.qkv_bias = qkv_bias
+        attn = []
+        for i in range(num_attentions):
+            if i == num_attentions-1:
+                attn_module = DeepFusion(dim, num_heads, qkv_bias)
+            else:
+                attn_module = InteractionModule(dim, None, None, num_heads, qkv_bias)
+            attn.append(attn_module)
+        self.attn = nn.ModuleList(attn)
+
+    def forward(self, vis_embed, nlp_embed, attn_mask):
+        output = vis_embed
+        for attn in self.attn[:-1]:
+            output = attn(output)
+        output = self.attn[-1](output, nlp_embed)
+        return output, attn_mask
+
+    def get_vis_label(self, img):
+        return
 
 
 def freeze(module, verbose=False):
@@ -203,6 +314,14 @@ HEAD_FACTORY = {
     GlobalEmbeddingHead(feat_dim, embed_dim, num_global_tokens),
     "local": lambda feat_dim, embed_dim, num_global_tokens, local_output_size:
     LocalEmbeddingHead(feat_dim, embed_dim, local_output_size)
+}
+VISION_HEAD_FACTORY = {
+    'interactive': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=2, num_heads=8, qkv_bias=True:
+    VisionAttentionHead(dim, num_input_tokens, num_vis_tokens, num_attentions, num_heads, qkv_bias),
+    'deep-fusion': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=2, num_heads=8, qkv_bias=True:
+    DeepFusionHead(dim, num_input_tokens, num_attentions, num_heads, qkv_bias),
+    'concat': lambda dim, num_input_tokens, num_vis_tokens=None, num_attentions=1, num_heads=8, qkv_bias=True:
+    ConcatHead(num_input_tokens)
 }
 
 

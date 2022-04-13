@@ -68,7 +68,7 @@ def config():
     test_only = False
 
     # below params varies with the environment
-    data_root = f"{os.getcwd()}/dataset/coco/"
+    data_root = f"/project/arrows"  # path of arrow files
     log_dir = "result"
     per_gpu_batchsize = 16  # you should define this manually with per_gpu_batch_size=#
     num_gpus = 1
@@ -80,6 +80,7 @@ def config():
 
     vis_mode = "global"
     vis_path = "nf_resnet50"
+    interactive_head = "concat"
     pretrained_vision = False
     num_vis_tokens = None
     checkpoint_dirpath = '/nas/po.ai'
@@ -89,11 +90,11 @@ def task_finetune_gpt2():
     lm_mode = 'gpt2'
     hface_path = 'gpt2'
     tokenizer = hface_path
-    datasets = ["coco"]
+    datasets = ["coco", "gcc"]
     pad_token = "<|endoftext|>"
     loss_names = _loss_names({"itm": 1})
     batch_size = 512
-    max_epoch = 10
+    max_epoch = 2
     max_steps = None
     warmup_steps = 0.1
     draw_false_image = 0
@@ -106,10 +107,10 @@ def task_finetune_electra():
     lm_mode = 'electra-base'
     hface_path = 'google/electra-base-discriminator'
     tokenizer = hface_path
-    datasets = ["coco"]
+    datasets = ["coco", "gcc"]
     loss_names = _loss_names({"mlm": 1})
     batch_size = 512
-    max_epoch = 10
+    max_epoch = 5
     max_steps = None
     warmup_steps = 0.1
     draw_false_image = 0
@@ -126,10 +127,10 @@ def task_finetune_bert_base():
     lm_mode = "bert-base"
     hface_path = 'bert-base-uncased'
     tokenizer = hface_path
-    datasets = ["coco"]
+    datasets = ["coco", "gcc"]
     loss_names = _loss_names({"mlm": 1})
     batch_size = 512
-    max_epoch = 10
+    max_epoch = 5
     max_steps = None
     warmup_steps = 0.1
     draw_false_image = 0
