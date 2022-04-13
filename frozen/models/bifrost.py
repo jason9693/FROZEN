@@ -209,9 +209,9 @@ class BiFrostMaskedLM(BiFrostBase):
         input_ids = tokens["input_ids"]
         nlp_embed = self._get_text_embeddings(input_ids)
         inputs = {k: v for k, v in tokens.items() if k != "input_ids"}
-        embed, attn_mask = self.interactive_head(vis_embed, nlp_embed, tokens['attention_mask'])
+        embed, _ = self.interactive_head(vis_embed, nlp_embed, tokens['attention_mask'])
         inputs["inputs_embeds"] = embed
-        inputs["attention_mask"] = attn_mask
+        inputs["attention_mask"] = None
         lm_output = self.lm(**inputs, **kwargs)
         return lm_output
 
@@ -297,7 +297,7 @@ class BiFrostGPT2CausalLM(BiFrostCausalLM):
         )
 
 
-class BiFrostElectraMaskedLM(BiFrostBase):
+class BiFrostElectraMaskedLM(BiFrostMaskedLM):
     def __init__(
         self,
         vis_model,
