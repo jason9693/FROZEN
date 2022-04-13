@@ -6,9 +6,10 @@ Unofficial Multi-Modal model : [FROZEN](https://deepmind.com/research/publicatio
 ## Paper
 https://arxiv.org/abs/2106.13884
 
-## Model 
+## Model
+
 ```python
-from frozen.models import FrozenModel
+from frozen.models.bifrost import FrozenModel
 
 frozen = FrozenModel.from_pretrained("gpt2")
 output = frozen(mok_img, mok_tokens)

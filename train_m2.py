@@ -3,29 +3,16 @@ import os
 
 import pytorch_lightning as pl
 
-from frozen.config import ex
+from frozen.config import ex_m2
 from frozen.datamodules.multitask_datamodule import MTDataModule
-from frozen.models.bifrost import MODEL_FACTORY
+from frozen.models.m2 import ModalityTranslator
 
 PYTHON_PATH = os.path.abspath('./')
 
-def _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, interactive_head, num_vis_tokens):
-    model = MODEL_FACTORY[lm_mode].from_pretrained(
-        hface_path,
-        vis_path=vis_path,
-        emb_key=emb_key,
-        vis_mode=vis_mode,
-        interactive_head=interactive_head,
-        num_vis_tokens=num_vis_tokens)
-    return model
 
-
-@ex.automain
+@ex_m2.automain
 def main(
     seed,
-    lm_mode,
-    hface_path,
-    emb_key,
     ex_tag,
     log_dir,
     load_path,
@@ -41,43 +28,36 @@ def main(
     val_check_interval,
     amp_level,
     test_only,
-    vis_path,
-    vis_mode,
-    interactive_head,
-    pretrained_vision,
-    num_vis_tokens,
     checkpoint_dirpath,
+    opt_type,
     _config
 ):
     if num_nodes > 1:
         dist_backend = 'horovod'
+        nodes = 1
         gpus = 1
     else:
         dist_backend = 'ddp'
+        nodes = num_nodes
         gpus = num_gpus
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(num_gpus)])}"
     print(_config)
     config_clone = copy.deepcopy(_config)
+    config_clone['tokenizer'] = "facebook/m2m100_418M"
     pl.seed_everything(seed)
     dm = MTDataModule(config_clone, dist=True)
-    path_key = f'{lm_mode}_{vis_path}_{vis_mode}'
-    if num_vis_tokens is not None:
-        path_key = path_key+'_vh'
-    if pretrained_vision:
-        path_key = path_key+'_ft'
-    model = _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, interactive_head, num_vis_tokens)
+    model = ModalityTranslator(tokenizer=dm.tokenizer, opt_type=opt_type)
     for k, v in config_clone.items():
         model.hparams[k] = v
-    file_name = exp_name = f'BiFrost_{path_key}'
+    file_name = exp_name = f'M2'
     if ex_tag:
         exp_name = f'{exp_name}_{ex_tag}'
-    model.set_tokenizer(dm.tokenizer)
 
     os.makedirs(log_dir, exist_ok=True)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=1,
         verbose=True,
-        monitor="val_loss",
+        monitor="m2/val_loss",
         mode="min",
         save_last=True,
         filename=file_name,
@@ -99,7 +79,7 @@ def main(
 
     trainer = pl.Trainer(
         gpus=gpus,
-        num_nodes=num_nodes,
+        num_nodes=nodes,
         precision=precision,
         accelerator=dist_backend,
         benchmark=True,
@@ -109,7 +89,7 @@ def main(
         callbacks=callbacks,
         logger=tb_logger,
         prepare_data_per_node=False,
-        replace_sampler_ddp=False,
+        replace_sampler_ddp=True,
         accumulate_grad_batches=grad_steps,
         log_every_n_steps=10,
         flush_logs_every_n_steps=10,

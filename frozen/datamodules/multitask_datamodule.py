@@ -43,14 +43,14 @@ class MTDataModule(LightningDataModule):
             self.dms[0].train_dataset.collate, mlm_collator=self.dms[0].mlm_collator,
         )
 
-        if self.dist:
-            self.train_sampler = DistributedSampler(self.train_dataset, shuffle=True)
-            self.val_sampler = DistributedSampler(self.val_dataset, shuffle=True)
-            self.test_sampler = DistributedSampler(self.test_dataset, shuffle=False)
-        else:
-            self.train_sampler = None
-            self.val_sampler = None
-            self.test_sampler = None
+        # if self.dist:
+        #     self.train_sampler = DistributedSampler(self.train_dataset, shuffle=True)
+        #     self.val_sampler = DistributedSampler(self.val_dataset, shuffle=True)
+        #     self.test_sampler = DistributedSampler(self.test_dataset, shuffle=False)
+        # else:
+        self.train_sampler = None
+        self.val_sampler = None
+        self.test_sampler = None
 
     def train_dataloader(self):
         loader = DataLoader(
