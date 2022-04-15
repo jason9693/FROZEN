@@ -21,7 +21,7 @@ def _loss_names(d):
 
 @ex.config
 def config():
-    python_path = os.path.abspath('./')
+    python_path = os.path.abspath('/')
     ex_tag = ""
     seed = 0
     datasets = ["vqa"]

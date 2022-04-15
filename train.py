@@ -7,7 +7,7 @@ from frozen.config import ex
 from frozen.datamodules.multitask_datamodule import MTDataModule
 from frozen.models.bifrost import MODEL_FACTORY
 
-PYTHON_PATH = os.path.abspath('./')
+PYTHON_PATH = os.path.abspath('/')
 
 def _get_model(lm_mode, hface_path, emb_key, vis_path, vis_mode, interactive_head, num_vis_tokens):
     model = MODEL_FACTORY[lm_mode].from_pretrained(

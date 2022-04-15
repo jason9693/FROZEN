@@ -7,7 +7,7 @@ from frozen.config import ex_m2
 from frozen.datamodules.multitask_datamodule import MTDataModule
 from frozen.models.m2 import ModalityTranslator
 
-PYTHON_PATH = os.path.abspath('./')
+PYTHON_PATH = os.path.abspath('/')
 
 
 @ex_m2.automain

@@ -182,7 +182,7 @@ class BiFrostCausalLM(BiFrostBase):
     def test_step(self, test_batch, batch_idx):
         return self.validation_step(test_batch, batch_idx)
 
-    def infer(self, img, tokens, max_length, ignore_eos_token_id=True):
+    def infer(self, img, tokens, max_length, ignore_eos_token_id):
         assert img.size(0) == 1, 'infer method does not support batch inference.'
         vis_embed = self.vis_model(img)
         result = None

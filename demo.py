@@ -13,10 +13,10 @@ from PIL import Image
 from einops import rearrange
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
-from frozen.models import BiFrostBase
+from frozen.models.bifrost import BiFrostBase
 from frozen.transforms import pixelbert_transform
 
-PYTHON_PATH = os.path.abspath('./')
+PYTHON_PATH = os.path.abspath('/')
 
 
 def get_all_checkpoint_paths(root_dir=os.path.join(PYTHON_PATH, 'BiFrost'), path_format='BiFrost*.ckpt'):

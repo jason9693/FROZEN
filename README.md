@@ -9,7 +9,7 @@ https://arxiv.org/abs/2106.13884
 ## Model
 
 ```python
-from frozen.models.bifrost import FrozenModel
+from frozen import FrozenModel
 
 frozen = FrozenModel.from_pretrained("gpt2")
 output = frozen(mok_img, mok_tokens)
@@ -36,9 +36,11 @@ Dataset preprocessing code is refered from [ViLT](https://github.com/dandelin/Vi
     bash script/vqav2_download.sh
     ```
 ### Step2. Making Arrow dataset.
-* See [prepare_datasets.py](./prepare_dataset.py)
+* See [prepare_datasets.py](prepare_dataset.py)
+
 ```python
-from frozen.utils.write_coco_karpathy import make_arrow
+from frozen import make_arrow
+
 make_arrow("./dataset/coco/", "./dataset/coco/arrows/")
 ```
 
