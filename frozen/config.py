@@ -1,9 +1,5 @@
 import os
-
 from sacred import Experiment
-
-ex = Experiment("FROZEN")
-ex_m2 = Experiment("M2")
 
 
 def _loss_names(d):
@@ -17,6 +13,9 @@ def _loss_names(d):
     }
     ret.update(d)
     return ret
+
+ex = Experiment("FROZEN")
+ex_m2 = Experiment("M2")
 
 
 @ex.config
@@ -148,7 +147,7 @@ def task_finetune_bert_base():
 def config():
     ex_tag = ""
     seed = 0
-    datasets = ["coco", "gcc"]
+    datasets = ["coco", "f30k"]
     loss_names = _loss_names({"itm": 1})
 
     # Image setting
@@ -170,7 +169,6 @@ def config():
 
     emb_key = "n_embd"
 
-    datasets = ["coco", "gcc", "f30k"]
     loss_names = _loss_names({"itm": 1})
     batch_size = 512
     max_epoch = 10
@@ -207,3 +205,21 @@ def config():
     amp_level = "O1"
 
     checkpoint_dirpath = '/nas/po.ai'
+    freeze_vision_encoder = True
+    num_frozen_stages = 3
+    sched_type = None
+    sched_milestones = None
+
+    use_pretrained_vision_encoder = True
+
+
+@ex_m2.named_config
+def from_scratch():
+    per_gpu_batchsize = 4
+    opt_type = 'adam'
+    max_epoch = 30
+    learning_rate = 5e-4
+    sched_type = 'cos'
+    freeze_vision_encoder = False
+
+

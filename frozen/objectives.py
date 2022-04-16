@@ -1,15 +1,10 @@
 import torch
-from torch import nn
-from torchtext.data.metrics import bleu_score 
+from torchtext.data.metrics import bleu_score
 
 from transformers import AutoTokenizer
 
-import importlib
-import os
 import ctypes
 from abc import ABC, abstractmethod
-
-from omegaconf import DictConfig
 
 
 class BleuStat(ctypes.Structure):
@@ -28,54 +23,22 @@ class BleuStat(ctypes.Structure):
 
 
 class BaseScorer(ABC):
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def add_string(self, ref, pred):
-        self.ref.append(ref)
-        self.pred.append(pred)
+    # def add_string(self, ref, pred):
+    #     self.ref.append(ref)
+    #     self.pred.append(pred)
 
     @abstractmethod
     def score(self, refs, preds) -> float:
         pass
-
-    # @abstractmethod
-    # def result_string(self) -> str:
-    #     pass
-
-
-# class BLEU(BaseScorer):
-#     def __init__(self, n_gram, ignore_idx: list):
-#         self.n_gram = n_gram
-#         self.ignore_idx = set(ignore_idx)
-
-#     def score(self, refs, preds):
-#         precision = self._precision(self.n_gram, refs, preds)
-#         pass
-
-#     def _precision(sef, n, ref, pred):
-#         assert n >= 1
-#         assert len(ref.size()) == len(pred.size()) == 2
-
-#         total_precision = 1
-#         judge = ref == pred
-#         for k in n:
-#             judge = judge[:, 1:] & judge[:, :-1]
-#             total_precision *= judge.sum(-1)
-#         return total_precision ** (1/n)
-
-#     def _clipping(self, ref, pred):
-#         idxs, cnts = ref.unique(return_counts=True)
         
 
 class SacreBLEU(BaseScorer):
     def __init__(self, n_gram, model_tokenizer, metric_tokenizer):
         self.n_gram = n_gram
-        # self.ignore_idx = set(ignore_idx)
         self.model_tok = model_tokenizer
         self.metric_tok = metric_tokenizer
 
-    def score(self, refs: torch.Tensor, preds:torch.Tensor):
+    def score(self, refs: torch.Tensor, preds: torch.Tensor):
         decoded_refs = self.model_tok.batch_decode(refs, skip_special_tokens=True)
         decoded_preds = self.model_tok.batch_decode(preds, skip_special_tokens=True)
         
@@ -86,8 +49,8 @@ class SacreBLEU(BaseScorer):
             self.metric_tok.tokenize(rs) for rs in decoded_preds
         ]
         
-        print(refs_tokens)
-        print(preds_tokens)
+        # print(refs_tokens)
+        # print(preds_tokens)
 
         return bleu_score(preds_tokens, refs_tokens, max_n=self.n_gram, weights=[1./self.n_gram]*self.n_gram)
 
