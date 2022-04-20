@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 
 from frozen.config import ex
 from frozen.datamodules.multitask_datamodule import MTDataModule
-from frozen.models.bifrost import MODEL_FACTORY
+from frozen.models._bifrost import MODEL_FACTORY
 
 PYTHON_PATH = os.path.abspath('/')
 

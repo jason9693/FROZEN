@@ -10,10 +10,10 @@ import torch
 from PIL import Image
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
-from frozen.models.m2 import ModalityTranslator
+from frozen.models.bifrost_translator import BiFrostTranslator
 from frozen.transforms import pixelbert_transform
 
-PYTHON_PATH = os.path.abspath('/project')
+PYTHON_PATH = os.path.abspath('../..')
 
 
 def get_all_checkpoint_paths(root_dir=os.path.join(PYTHON_PATH, 'M2'), path_format='M2*.ckpt'):
@@ -33,7 +33,7 @@ def convert_to_inputs(img_input, image_size):
 
 def load_model(path):
     checkpoint = torch.load(path)
-    model = ModalityTranslator()
+    model = BiFrostTranslator()
     model.load_state_dict(checkpoint['state_dict'])
     return model
 

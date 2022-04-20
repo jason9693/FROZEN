@@ -1,6 +1,6 @@
 import torch
 import unittest
-from frozen.models.bifrost import BiFrostGPT2CausalLM
+from frozen.models._bifrost import BiFrostGPT2CausalLM
 from transformers import AutoTokenizer
 
 model_names = ["gpt2", "bert-base-uncased"]

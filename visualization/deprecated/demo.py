@@ -13,7 +13,7 @@ from PIL import Image
 from einops import rearrange
 
 from frozen.datamodules.datamodule_base import get_pretrained_tokenizer
-from frozen.models.bifrost import BiFrostBase
+from frozen.models._bifrost import BiFrostBase
 from frozen.transforms import pixelbert_transform
 
 PYTHON_PATH = os.path.abspath('/')
