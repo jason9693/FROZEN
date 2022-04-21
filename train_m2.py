@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 
 from frozen.config import ex_nmt
 from frozen.datamodules.multitask_datamodule import MTDataModule
-from frozen.models.bifrost_translator import BiFrostTranslator
+from frozen.models import set_model_cls_from_config
 
 from omegaconf import OmegaConf
 
@@ -27,11 +27,11 @@ def main(_config):
         pl_num_nodes = config.num_nodes
         pl_num_gpus = config.num_gpus
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(config.num_gpus)])}"
-    config_clone['tokenizer'] = "facebook/m2m100_418M"
     pl.seed_everything(config.seed)
     dm = MTDataModule(config_clone, dist=True)
     dm.prepare_data_per_node = False
-    model = BiFrostTranslator(config, dm.tokenizer)
+    model_cls = set_model_cls_from_config(config)
+    model = model_cls(config, dm.tokenizer)
     for k, v in config_clone.items():
         model.hparams[k] = v
     exp_name = f'M2'
@@ -76,8 +76,8 @@ def main(_config):
         logger=tb_logger,
         replace_sampler_ddp=True,
         accumulate_grad_batches=grad_steps,
-        log_every_n_steps=10,
-        flush_logs_every_n_steps=10,
+        log_every_n_steps=config.logging_interval,
+        flush_logs_every_n_steps=config.logging_interval,
         resume_from_checkpoint=config.resume_from,
         weights_summary="top",
         fast_dev_run=config.fast_dev_run,

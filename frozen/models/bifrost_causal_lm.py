@@ -6,13 +6,14 @@ from frozen.models.base import BiFrostBase
 from utils import freeze_module
 
 
-class BiFrostCausalLM(BiFrostBase):
+class BiFrostCausalLMBase(BiFrostBase):
     def __init__(self, config, tokenizer=None):
         super().__init__(config, tokenizer)
         self._set_bleu_metric()
 
     def _set_decoder(self):
         self.decoder = AutoModelForCausalLM.from_pretrained(self.config.lm_path)
+        self.lm_config = self.decoder.config
         freeze_module(self.decoder)
 
     def forward(self, img, input_ids, attention_mask=None):
@@ -96,5 +97,6 @@ class BiFrostCausalLM(BiFrostBase):
             if next_token == self.tokenizer.eos_token_id and not ignore_eos:
                 return output
         return output
+
 
 

@@ -168,6 +168,7 @@ def config():
     max_steps = None
     loss_names = _loss_names({"itm": 1})
     val_check_interval = 0.05
+    logging_interval = 10
 
     # Image Setting
     vision_encoder_path = 'nf_resnet50'
@@ -180,7 +181,9 @@ def config():
     draw_false_image = 0
 
     # Text Setting
+    lm_task = 'translate'
     lm_path = 'facebook/m2m100_418M'
+    tokenizer = lm_path
     bleu_tokenizer_path = 'bert-base-uncased'
     bleu_conf = None
     vqav2_label_size = 3129

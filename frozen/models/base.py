@@ -19,7 +19,6 @@ class BiFrostBase(pl.LightningModule):
         self.vision_encoder_path = config.vision_encoder_path
         self.lm_path = config.lm_path
         self._set_decoder()
-        self.lm_config = self.decoder.config
         self.embed_dim = self.lm_config.d_model
         self._set_encoder()
         self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(config.lm_path)
@@ -64,10 +63,6 @@ class BiFrostBase(pl.LightningModule):
             **default_bleu_kwargs
         )
         self.meters = {'train/bleu': AverageMeter(), 'val/bleu': AverageMeter()}
-
-    @classmethod
-    def _get_logits_from_output(cls, output):
-        return output.logits
 
     def configure_optimizers(self):
         if self.config.opt_type == 'adam':

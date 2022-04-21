@@ -6,9 +6,10 @@ from frozen.models.base import BiFrostBase
 from utils import freeze_module
 
 
-class BiFrostMaskedLM(BiFrostBase):
+class BiFrostMaskedLMBase(BiFrostBase):
     def _set_decoder(self):
         self.decoder = AutoModelForMaskedLM.from_pretrained(self.config.lm_path)
+        self.lm_config = self.decoder.config
         freeze_module(self.decoder)
 
     def forward(self, img, input_ids, attention_mask=None):
@@ -21,10 +22,9 @@ class BiFrostMaskedLM(BiFrostBase):
 
     def forward_language_model(self, vision_embeds, input_ids):
         lm_embeds = self.decoder.model.get_input_embeddings()(input_ids)
-        # todo: optionally choose vision-first, vision-last
         embeds = torch.cat([vision_embeds, lm_embeds], dim=1)
         kwargs = dict(input_embeds=embeds)
-        return self._get_logits_from_output(self.decoder(**kwargs))
+        return self.decoder(**kwargs)
 
     def compute_loss(self, batch):
         img = batch['image'][0]
@@ -55,4 +55,8 @@ class BiFrostMaskedLM(BiFrostBase):
         output = logits[0].argmax(dim=-1)
         return output
 
+
+class BiFrostBERT(BiFrostMaskedLMBase):
+    def forward_language_model(self, vision_embeds, input_ids):
+        return super().forward_language_model(vision_embeds, input_ids).logits
 
