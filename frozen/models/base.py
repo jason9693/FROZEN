@@ -2,10 +2,8 @@ import warnings
 
 import pytorch_lightning as pl
 import torch
-from einops.layers.torch import Rearrange
 from omegaconf import OmegaConf
 from timm.utils import AverageMeter
-from torch import nn
 from transformers import AutoTokenizer
 
 from frozen.models.vision_models import PretrainedVisionEncoder
@@ -16,40 +14,7 @@ class BiFrostBase(pl.LightningModule):
     def __init__(self, config, tokenizer=None):
         super().__init__()
         self.config = config
-        self.vision_encoder_path = config.vision_encoder_path
-        self.lm_path = config.lm_path
-        self._set_decoder()
-        self.embed_dim = self.lm_config.d_model
-        self._set_encoder()
-        self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(config.lm_path)
-        if config.freeze_vision_encoder:
-            if not config.use_pretrained_vision_encoder:
-                warnings.warn('use_pretrained_vision_encoder must be true for fine-tuning; It will be ignored.')
-            else:
-                self.encoder.freeze(config.num_frozen_stages)
-
-    def _set_encoder(self):
-        self._set_encoder_backbone()
-        self._set_encoder_head()
-
-    def _set_encoder_backbone(self):
-        self.encoder = PretrainedVisionEncoder.from_pretrained(
-            self.config.vision_encoder_path,
-            pretrained=self.config.use_pretrained_vision_encoder
-        )
-
-    def _set_encoder_head(self):
-        out_dim = self.encoder.num_features
-        self.encoder_head = nn.Sequential(
-            nn.Conv2d(out_dim, out_dim, 3, 2, 1),
-            nn.BatchNorm2d(out_dim),
-            nn.GELU(),
-            nn.Conv2d(out_dim, self.embed_dim, 3, 2, 1),
-            Rearrange('b d h w -> b (h w) d')
-        )
-
-    def _set_decoder(self):
-        raise NotImplementedError()
+        self.tokenizer = tokenizer
 
     # for convenience
     def _set_bleu_metric(self):
@@ -107,4 +72,26 @@ class BiFrostBase(pl.LightningModule):
         config = OmegaConf.to_object(self.config)
         checkpoint['config'] = config
 
+
+class BiFrostVisionEncBase(BiFrostBase):
+    def __init__(self, config, tokenizer=None):
+        super().__init__(config, tokenizer)
+        self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(config.lm_path)
+        self._set_decoder()
+        self.embed_dim = self.lm_config.d_model
+        self._set_encoder()
+
+    def _set_encoder(self):
+        self.encoder = PretrainedVisionEncoder.from_pretrained(
+            self.config.encoder_path,
+            pretrained=self.config.use_pretrained_encoder
+        )
+        if self.config.freeze_encoder:
+            if not self.config.use_pretrained_encoder:
+                warnings.warn('use_pretrained_encoder must be true for fine-tuning; It will be ignored.')
+            else:
+                self.encoder.freeze(self.config.num_frozen_stages)
+
+    def _set_decoder(self):
+        raise NotImplementedError()
 

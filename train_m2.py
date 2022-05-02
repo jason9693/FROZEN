@@ -18,12 +18,10 @@ def main(_config):
     print(_config)
     config_clone = deepcopy(_config)
     config = OmegaConf.create(config_clone)
-    if config.num_nodes > 1:
-        dist_backend = 'horovod'
+    if config.dist_backend == 'horovod':
         pl_num_nodes = 1
         pl_num_gpus = 1
     else:
-        dist_backend = 'ddp'
         pl_num_nodes = config.num_nodes
         pl_num_gpus = config.num_gpus
         os.environ['CUDA_VISIBLE_DEVICES'] = f"{','.join([str(g) for g in range(config.num_gpus)])}"
@@ -67,7 +65,7 @@ def main(_config):
         gpus=pl_num_gpus,
         num_nodes=pl_num_nodes,
         precision=config.precision,
-        strategy=dist_backend,
+        strategy=config.dist_backend,
         benchmark=True,
         deterministic=True,
         max_epochs=max_epochs,

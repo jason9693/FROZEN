@@ -3,20 +3,27 @@ from torch import nn
 from transformers import AutoModelForMaskedLM
 
 from frozen.models.base import BiFrostBase
+from frozen.models.layers import conv3_bn_gelu
 from utils import freeze_module
 
 
 class BiFrostMaskedLMBase(BiFrostBase):
+    def __init__(self, config, tokenizer=None):
+        super().__init__(config, tokenizer)
+        self.encoder_head = nn.Sequential(
+            *(conv3_bn_gelu(self.encoder.num_features, self.embed_dim, 2) for _ in range(config.num_ds))
+        )
+
     def _set_decoder(self):
         self.decoder = AutoModelForMaskedLM.from_pretrained(self.config.lm_path)
         self.lm_config = self.decoder.config
         freeze_module(self.decoder)
 
     def forward(self, img, input_ids, attention_mask=None):
-        vision_embeds = self.forward_vision_encoder(img)
+        vision_embeds = self.forward_encoder(img)
         return self.forward_language_model(vision_embeds, input_ids)
 
-    def forward_vision_encoder(self, img):
+    def forward_encoder(self, img):
         vision_embeds = self.encoder_head(self.encoder.forward_features(img))
         return vision_embeds
 

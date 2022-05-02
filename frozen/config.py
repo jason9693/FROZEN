@@ -164,14 +164,14 @@ def config():
     checkpoint_dirpath = '/nas/po.ai'
     batch_size = 512
     per_gpu_batchsize = 4
-    max_epochs = 30
+    max_epochs = 10
     max_steps = None
     loss_names = _loss_names({"itm": 1})
     val_check_interval = 0.05
     logging_interval = 10
 
     # Image Setting
-    vision_encoder_path = 'nf_resnet50'
+    encoder_path = 'nf_resnet50'
     train_transform_keys = ["pixelbert"]
     val_transform_keys = ["pixelbert"]
     image_size = 384
@@ -192,10 +192,13 @@ def config():
     draw_false_text = 0
     forced_bos_token_id = None
     forced_bos_token = None
+    freeze_decoder = False
+    use_lm_as_encoder = False
+    train_multimodality = True
 
     # Optimizer Setting
     opt_type = "adam"
-    learning_rate = 3e-5
+    learning_rate = 3e-5*num_nodes*num_gpus*per_gpu_batchsize/64
     weight_decay = 0.01
     betas = (0.9, 0.95)
     nesterov = True
@@ -218,26 +221,51 @@ def config():
     test_only = False
 
     # Vision Encoder Setting
-    freeze_vision_encoder = False
+    freeze_encoder = False
     num_frozen_stages = 0
-    use_pretrained_vision_encoder = True
+    use_pretrained_encoder = True
+    num_ds = 2
 
-
-@ex_nmt.named_config
-def from_scratch():
-    per_gpu_batchsize = 4
-    opt_type = 'adam'
-    max_epochs = 30
-    learning_rate = 3e-5
-    sched_type = 'cos'
-    freeze_vision_encoder = False
+    translate_tasks = dict(i2t=1.)
+    dist_backend = 'horovod'
 
 
 @ex_nmt.named_config
 def finetune():
     per_gpu_batchsize = 8
     opt_type = 'adam'
-    max_epochs = 30
-    learning_rate = 3e-5
     sched_type = 'cos'
+    freeze_encoder = True
     num_frozen_stages = 2
+
+
+@ex_nmt.named_config
+def bibid():
+    per_gpu_batchsize = 2
+    use_lm_as_encoder = True
+    train_multimodality = True
+    translate_tasks = dict(i2t=1., t2i=20.)
+
+
+@ex_nmt.named_config
+def bibid_l1():
+    per_gpu_batchsize = 2
+    use_lm_as_encoder = True
+    train_multimodality = True
+    translate_tasks = {'i2t': 1., 't2i+L1': 20.}
+
+
+@ex_nmt.named_config
+def bibid_full():
+    per_gpu_batchsize = 2
+    use_lm_as_encoder = True
+    train_multimodality = True
+    translate_tasks = dict(i2t=0.5, t2t=0.5, i2i=10., t2i=10.)
+
+
+@ex_nmt.named_config
+def bibid_l1_full():
+    per_gpu_batchsize = 2
+    use_lm_as_encoder = True
+    train_multimodality = True
+    translate_tasks = {'i2t': 0.5, 't2t': 0.5, 'i2i+L1': 10., 't2i+L1': 10.}

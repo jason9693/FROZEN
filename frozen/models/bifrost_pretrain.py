@@ -16,10 +16,10 @@ class BiFrostForPreTrainingBase(BiFrostBase):
         freeze_module(self.decoder)
 
     def forward(self, img, input_ids, attention_mask=None):
-        vision_embeds = self.forward_vision_encoder(img)
+        vision_embeds = self.forward_encoder(img)
         return self.forward_language_model(vision_embeds, input_ids)
 
-    def forward_vision_encoder(self, img):
+    def forward_encoder(self, img):
         vision_embeds = self.encoder_head(self.encoder.forward_features(img))
         return vision_embeds
 

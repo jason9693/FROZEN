@@ -364,7 +364,7 @@ class LinearPatchEmbed(nn.Module):
         return self.head(self.to_patch_embed(x))
 
 
-class Stem(nn.Module):
+class ConvPatchEmbed(nn.Module):
     def __init__(self, dim=384, patch_size=16):
         super().__init__()
         in_dim = 3
