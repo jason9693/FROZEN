@@ -1,33 +1,44 @@
 import warnings
-from contextlib import contextmanager
-
-from frozen.models.layers import PerResidualFP16ScaledTransformerBlock
+from frozen.models.layers import PerResidualScaledEncoderBlock, PerResidualScaledDecoderBlock
 
 
-def check_overflow(params):
-    for param in params:
-        cpu_sum = float(param.grad.float().sum())
-        if cpu_sum in (float('inf'), -float('inf')) or cpu_sum != cpu_sum:
-            return True
-    return False
+class PerResidualDynamicLossScaler:
+    def __init__(
+        self,
+        model,
+        init_scale_factor,
+        update_factor,
+        backoff_factor
+    ):
+        self.model = model
+        self.scale_factor = init_scale_factor
+        self.update_factor = update_factor
+        self.backoff_factor = backoff_factor
+
+    def check_overflow(self):
+        is_overflow = False
+        for param in self.model.params:
+            cpu_sum = float(param.grad.float().sum())
+            if cpu_sum in (float('inf'), -float('inf')) or cpu_sum != cpu_sum:
+                is_overflow = True
+        return is_overflow
+
+    def update_scale_factor(self):
+        is_overflow = self.check_overflow()
+        if is_overflow:
+            self.scale_factor *= self.backoff_factor
+        else:
+            self.scale_factor *= self.update_factor
+        for module in self.model.modules():
+            if isinstance(module, PerResidualScaledEncoderBlock) or isinstance(module, PerResidualScaledDecoderBlock):
+                module.update_scale_factor(self.scale_factor)
+        return is_overflow
+
+    def step(self, optimizer):
+        if self.update_scale_factor():
+            warnings.warn('Gradient overflow is occurred; SKIPPING update parameters at this step.')
+        else:
+            optimizer.step()
 
 
-def update_scale_factor(model):
-    is_overflow = check_overflow(model.parameters())
-    for module in model.modules():
-        if isinstance(module, PerResidualFP16ScaledTransformerBlock):
-            module.update_scale_factor(is_overflow)
-    return is_overflow
-
-
-# for training w/o pytorch-lightning
-# for pytorch-lightning, you have to implement optimizer_step manually
-@contextmanager
-def fp16_step(model, optimizer, verbose=True):
-    yield
-    is_overflow = update_scale_factor(model)
-    if not is_overflow:
-        optimizer.step()
-    elif verbose:
-        warnings.warn('Gradient overflow is detected; SKIPPING gradient update.')
 

@@ -74,14 +74,14 @@ def conv3_bn_gelu(in_dim, out_dim, stride):
 
 
 class Attention(nn.Module):
-    def __init__(self, embed_dim, num_heads, dropout=0., bias=True, is_decoder=False):
+    def __init__(self, embed_dim, num_heads, dropout=0., bias=True, is_crossed_attn=False):
         super(Attention, self).__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.dropout = dropout
         self.head_dim = embed_dim//num_heads
-        self.is_decoder = is_decoder
-        if is_decoder:
+        self.is_crossed_attn = is_crossed_attn
+        if is_crossed_attn:
             self.qkv = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim, bias=bias),
                 Rearrange('b n (h d) -> b h n d', h=self.num_heads)
@@ -100,7 +100,7 @@ class Attention(nn.Module):
         value=None,
         attention_mask=None):
         # TODO: This implementation does not consider model-parallelism yet, so it might require modifying after
-        if self.is_decoder:
+        if self.is_crossed_attn:
             assert key is not None and value is not None, 'key and value have to exist for decoder'
             query = self.qkv(x)
         else:
@@ -177,43 +177,115 @@ def scale_filter_wrapper(x, norm, fx, scale_factor):
     return output
 
 
-class PerResidualFP16ScaledTransformerBlock(nn.Module):
+class PerResidualScaledEncoderBlock(nn.Module):
     def __init__(
         self,
         embed_dim,
         num_heads=8,
         expand_ratio=4.,
-        init_scale_factor=math.pow(2., 13.),
-        update_factor=math.pow(2., 1./1000.),
-        backoff_factor=math.sqrt(0.5),
         dropout=0.,
         bias=True,
-        is_decoder=False
+        use_mixed_precision=True,
+        init_scale_factor=None
     ):
         super().__init__()
-        self.scale_factor = init_scale_factor
-        self.update_factor = update_factor
-        self.backoff_factor = backoff_factor
         self.embed_dim = embed_dim
         self.expand_ratio = expand_ratio
         self.attn_norm = nn.LayerNorm(embed_dim)
-        self.attn = Attention(embed_dim, num_heads, dropout, bias, is_decoder)
+        self.attn = Attention(embed_dim, num_heads, dropout, bias)
         self.mlp_norm = nn.LayerNorm(embed_dim)
         self.mlp = MultiLayerPerceptron(embed_dim, expand_ratio)
+        self.use_mixed_precision = use_mixed_precision
+        self._scale_factor = init_scale_factor
 
     @torch.cuda.amp.autocast(False)
-    def forward(self, x, key=None, value=None, attention_mask=None):
+    def forward(self, x, attention_mask=None):
+        if self.use_mixed_precision:
+            return self.forward_fp16(x, attention_mask)
+        else:
+            return self.forward_fp32(x, attention_mask)
+
+    def forward_fp32(self, x, attention_mask=None):
+        res = output = x
+        output = self.attn_norm(output)
+        output = self.attn(output, key=None, value=None, attention_mask=attention_mask)
+        res = output = output+res
+        output = self.mlp_norm(output)
+        output = self.mlp(output)
+        output = output+res
+        return output
+
+    def forward_fp16(self, x, attention_mask=None):
         scale_factor = torch.tensor(self.scale_factor, dtype=torch.float32).to(x.device)
         res = output = x
-        attn_fx = lambda _x: self.attn(_x, key, value, attention_mask)
+        attn_fx = lambda _x: self.attn(_x, key=None, value=None, attention_mask=attention_mask)
         output = scale_filter_wrapper(output, self.attn_norm, attn_fx, scale_factor)
         res = output = output+res
         output = scale_filter_wrapper(output, self.mlp_norm, self.mlp, scale_factor)
         output = output+res
         return output
 
-    def update_scale_factor(self, is_overflow):
-        mul_factor = self.backoff_factor if is_overflow else self.update_factor
-        self.scale_factor *= mul_factor
+    def update_scale_factor(self, scale_factor):
+        self._scale_factor = scale_factor
+
+
+class PerResidualScaledDecoderBlock(nn.Module):
+    def __init__(
+        self,
+        embed_dim,
+        num_heads=8,
+        expand_ratio=4.,
+        dropout=0.,
+        bias=True,
+        use_mixed_precision=True,
+        init_scale_factor=math.pow(2., 13.)
+    ):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.expand_ratio = expand_ratio
+        self.attn_norm = nn.LayerNorm(embed_dim)
+        self.attn = Attention(embed_dim, num_heads, dropout, bias)
+        self.enc_attn_norm = nn.LayerNorm(embed_dim)
+        self.enc_attn = Attention(embed_dim, num_heads, dropout, bias, is_crossed_attn=True)
+        self.mlp_norm = nn.LayerNorm(embed_dim)
+        self.mlp = MultiLayerPerceptron(embed_dim, expand_ratio)
+        self.use_mixed_precision = use_mixed_precision
+        self._scale_factor = init_scale_factor
+
+    @torch.cuda.amp.autocast(False)
+    def forward(self, x, embed, attention_mask=None):
+        if self.use_mixed_precision:
+            return self.forward_fp16(x, embed, attention_mask)
+        else:
+            return self.forward_fp32(x, embed, attention_mask)
+
+    def forward_fp32(self, x, embeds, attention_mask=None):
+        res = output = x
+        output = self.attn_norm(output)
+        output = self.attn(output, key=None, value=None, attention_mask=attention_mask)
+        res = output = output+res
+        output = self.enc_attn_norm(output)
+        output = self.enc_attn(output, key=embeds, value=embeds, attention_mask=attention_mask)
+        res = output = output+res
+        output = self.mlp_norm(output)
+        output = self.mlp(output)
+        output = output+res
+        return output
+
+    def forward_fp16(self, x, embeds, attention_mask=None):
+        scale_factor = torch.tensor(self.scale_factor, dtype=torch.float32).to(x.device)
+        res = output = x
+        attn_fx = lambda _x: self.attn(_x, key=None, value=None, attention_mask=attention_mask)
+        output = scale_filter_wrapper(output, self.attn_norm, attn_fx, scale_factor)
+        res = output = output+res
+        enc_attn_fx = lambda _x: self.enc_attn(_x, key=embeds, value=embeds, attention_mask=attention_mask)
+        output = scale_filter_wrapper(output, self.enc_attn_norm, enc_attn_fx, scale_factor)
+        res = output = output+res
+        output = scale_filter_wrapper(output, self.mlp_norm, self.mlp, scale_factor)
+        output = output+res
+        return output
+
+    def update_scale_factor(self, scale_factor):
+        self._scale_factor = scale_factor
 
 

@@ -43,7 +43,7 @@ BUILTIN_INSTRUCTION_SET = dict(
     ],
     visual_entailment=[
         'Can image and text "<text>" imply text "<text>"?',
-        'Can image and text "<text>" entail text "<text>"?',
+        'Can image and text "<text>" entail text "<text>"?'
     ],
     style=[
         'What is the <style> style image of this image?'

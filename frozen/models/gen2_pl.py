@@ -1,63 +1,15 @@
-import math
-
+import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
-from einops import repeat, rearrange
-from torch import nn
-from transformers import AutoModelForSeq2SeqLM
 
-from frozen.models.base import BiFrostBase
-from frozen.models.layers import ConvPatchEmbed, PatchEmbedToImage
-from utils import freeze_module
+from frozen.models.transformer import Gen2Model
 
 
-class BiBidM2M100(BiFrostBase):
+class Gen2TrainModule(pl.LightningModule):
     def __init__(self, config, tokenizer=None):
-        super().__init__(config, tokenizer)
-        self._set_model()
-        self._set_bleu_metric()
-        self._register_special_tokens()
-
-    def _register_special_tokens(self):
-        if self.config.forced_bos_token_id is not None:
-            self.bos_token_id = self.config.forced_bos_token_id
-        elif self.config.forced_bos_token is not None:
-            self.bos_token_id = self.tokenizer.encode(self.config.forced_bos_token)[0]
-        else:
-            self.bos_token_id = self.tokenizer.bos_token_id
-        with torch.no_grad():
-            bos_sep_token_id = torch.tensor([self.bos_token_id, self.tokenizer.sep_token_id]).view(1, -1)
-            bos_sep_embed = self.shared(bos_sep_token_id)*self.encoder.embed_scale
-            bos_embed = bos_sep_embed[:, :1]
-            sep_embed = bos_sep_embed[:, 1:]
-            bos_embed.requires_grad = False
-            sep_embed.requires_grad = False
-        self.register_buffer('bos_embed', bos_embed)
-        self.register_buffer('sep_embed', sep_embed)
-
-    @property
-    def encoder(self):
-        return self.translator.model.encoder
-
-    @property
-    def decoder(self):
-        return self.translator.model.decoder
-
-    @property
-    def shared(self):
-        return self.translator.model.shared
-
-    def _set_model(self):
-        self.translator = AutoModelForSeq2SeqLM.from_pretrained(self.config.lm_path)
-        self.lm_config = self.translator.config
-        self.embed_dim = self.lm_config.d_model
-        self.to_patch_embed = ConvPatchEmbed(self.embed_dim, self.config.patch_size)
-        self.to_reconstructed_img = PatchEmbedToImage(self.embed_dim, self.config.patch_size)
-        if self.config.freeze_encoder:
-            freeze_module(self.translator.encoder)
-        if self.config.freeze_decoder:
-            freeze_module(self.translator.decoder)
-            freeze_module(self.translator.lm_head)
+        super().__init__()
+        self.config = config
+        self.model = Gen2Model(config)
+        self.tokenizer = tokenizer
 
     def forward(self, input_patches, input_ids, attention_mask=None, task='i2t'):
         if task == 't2t':
@@ -178,4 +130,3 @@ class BiBidM2M100(BiFrostBase):
             if next_token == self.tokenizer.eos_token_id and not ignore_eos:
                 return decoding_output
         return decoding_output
-
